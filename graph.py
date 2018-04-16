@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import tensorflow as tf
+import numpy as np
 
 
 class ComputationalGraph(ABC):
@@ -15,6 +16,7 @@ class ComputationalGraph(ABC):
         self.l2_v = l2_v
         self.l2_w = l2_w
         self.init_std = init_std
+        self.optimizer = None
         self.init_all_vars = None
         self.n_features = None
         self.summary_op = None
@@ -33,7 +35,12 @@ class ComputationalGraph(ABC):
         self.checked_target = None
         self.trainer = None
         self.init_all_vars = None
+        self.batch_loss = None
+        self.size = None
+        self.saver = None
         self.ops = None
+        self.x = None
+        self.y = None
 
     def define_graph(self):
         self.global_step = tf.train.create_global_step()
@@ -50,9 +57,9 @@ class ComputationalGraph(ABC):
             self.init_target()
         with tf.name_scope('training'):
             self.init_trainer()
-
         self.init_all_vars = tf.global_variables_initializer()
         self.summary_op = tf.summary.merge_all()
+        self.saver = tf.train.Saver()
         self.set_ops()
 
     def init_params(self):
@@ -90,6 +97,26 @@ class ComputationalGraph(ABC):
             msg='NaN or Inf in parameters')
         tf.summary.scalar('bias', self.bias)
 
+    def init_trainer(self):
+        self.trainer = self.optimizer.minimize(self.checked_target,
+                                               global_step=self.global_step)
+        self.batch_loss = self.reduced_loss * self.size
+
+    def init_regularization(self):
+        self.l2_norm = tf.reduce_sum(
+            tf.add(
+                tf.multiply(self.lambda_w, tf.pow(self.weights, 2)),
+                tf.multiply(self.lambda_v,
+                            tf.transpose(tf.pow(self.params, 2)))))
+
+    def init_target(self):
+        self.target = self.l2_norm + self.reduced_loss
+        self.checked_target = tf.verify_tensor_all_finite(
+            self.target,
+            msg='NaN or Inf in target value',
+            name='target')
+        tf.summary.scalar('target', self.checked_target)
+
     @abstractmethod
     def set_ops(self):
         pass
@@ -110,20 +137,8 @@ class ComputationalGraph(ABC):
     def init_loss(self):
         pass
 
-    @abstractmethod
-    def init_regularization(self):
-        pass
 
-    @abstractmethod
-    def init_target(self):
-        pass
-
-    @abstractmethod
-    def init_trainer(self):
-        pass
-
-
-class RegressionGraph(ComputationalGraph):
+class PointwiseGraph(ComputationalGraph):
 
     def __init__(self,
                  n_factors=10,
@@ -134,7 +149,7 @@ class RegressionGraph(ComputationalGraph):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer):
-        super(RegressionGraph, self).__init__(
+        super(PointwiseGraph, self).__init__(
             dtype=dtype,
             init_std=init_std,
             n_factors=n_factors,
@@ -142,13 +157,13 @@ class RegressionGraph(ComputationalGraph):
             l2_v=l2_v)
         self.learning_rate = learning_rate
         self.loss_function = loss_function
-        self.optimizer = optimizer
-        self.optimizer_fun = self.optimizer(learning_rate=self.learning_rate)
-        self.x = None
-        self.y = None
+        self.optimizer = optimizer(learning_rate=self.learning_rate)
 
     def set_ops(self):
-        self.ops = [self.trainer, self.summary_op, self.global_step]
+        self.ops = [self.trainer,
+                    self.summary_op,
+                    self.global_step,
+                    self.batch_loss]
 
     def init_placeholder(self):
         pass
@@ -160,6 +175,7 @@ class RegressionGraph(ComputationalGraph):
     def init_main_graph(self):
         x = self.x
         assert x is not None, "x must be set before graph is defined"
+        self.size = x.get_shape()[0].value or 1
         el_wise_mul = x * self.weights
         weighted_sum = tf.sparse_reduce_sum(el_wise_mul, 1, keep_dims=True)
         linear_terms = tf.add(self.bias, weighted_sum, name='linear_terms')
@@ -179,25 +195,6 @@ class RegressionGraph(ComputationalGraph):
         self.loss = self.loss_function(self.y_hat, y_true)
         self.reduced_loss = tf.reduce_mean(self.loss)
         tf.summary.scalar('loss', self.reduced_loss)
-
-    def init_regularization(self):
-        self.l2_norm = tf.reduce_sum(
-            tf.add(
-                tf.multiply(self.lambda_w, tf.pow(self.weights, 2)),
-                tf.multiply(self.lambda_v,
-                            tf.transpose(tf.pow(self.params, 2)))))
-
-    def init_target(self):
-        self.target = self.reduced_loss + self.l2_norm
-        self.checked_target = tf.verify_tensor_all_finite(
-            self.target,
-            msg='NaN or Inf in target value',
-            name='target')
-        tf.summary.scalar('target', self.checked_target)
-
-    def init_trainer(self):
-        self.trainer = self.optimizer_fun.minimize(self.checked_target,
-                                                   global_step=self.global_step)
 
 
 class BayesianPersonalizedRankingGraph(ComputationalGraph):
@@ -219,60 +216,30 @@ class BayesianPersonalizedRankingGraph(ComputationalGraph):
         )
         self.learning_rate = learning_rate
         self.optimizer = optimizer(learning_rate=self.learning_rate)
-        self.pos_sample = None
-        self.neg_sample = None
-        self.pos_hat = None
+        self.y_hat = None
         self.neg_hat = None
 
-    def set_params(self, pos_sample, neg_sample):
+    def set_params(self, x, y):
         pass
 
     def set_ops(self):
-            self.ops = [self.trainer, self.summary_op, self.global_step]
+        self.ops = [self.trainer,
+                    self.summary_op,
+                    self.global_step,
+                    self.batch_loss]
 
     def init_placeholder(self):
-        self.pos_sample = tf.sparse_placeholder(self.dtype,
-                                                shape=[None, self.n_features],
-                                                name='pos')
-        self.neg_sample = tf.sparse_placeholder(self.dtype,
-                                                shape=[None, self.n_features],
-                                                name='neg')
-
-    def init_params(self):
-        self.lambda_w = tf.constant(self.l2_w,
-                                    dtype=self.dtype,
-                                    name='lambda_w')
-        self.lambda_v = tf.constant(self.l2_v,
-                                    dtype=self.dtype,
-                                    name='lambda_w')
-        self.half = tf.constant(0.5,
-                                dtype=self.dtype,
-                                name='half')
-        bias = tf.random_uniform([1],
-                                 minval=-self.init_std,
-                                 maxval=self.init_std,
-                                 dtype=self.dtype)
-        self.bias = tf.verify_tensor_all_finite(
-            tf.Variable(bias, name='bias'),
-            msg='NaN or Inf in bias')
-        rnd_weights = tf.random_uniform([self.n_features],
-                                        minval=-self.init_std,
-                                        maxval=self.init_std,
-                                        dtype=self.dtype)
-        self.weights = tf.verify_tensor_all_finite(
-            tf.Variable(rnd_weights, name='weights'),
-            msg='NaN or Inf in weights')
-        rnd_params = tf.random_uniform([self.n_features, self.n_factors],
-                                       minval=-self.init_std,
-                                       maxval=self.init_std,
-                                       dtype=tf.float32)
-        self.params = tf.verify_tensor_all_finite(
-            tf.Variable(rnd_params, name='params'),
-            msg='NaN or Inf in parameters')
+        self.x = tf.sparse_placeholder(self.dtype,
+                                       shape=[None, self.n_features],
+                                       name='pos')
+        self.y = tf.sparse_placeholder(self.dtype,
+                                       shape=[None, self.n_features],
+                                       name='neg')
 
     def init_main_graph(self):
-        self.pos_hat = self.equation(self.pos_sample)
-        self.neg_hat = self.equation(self.neg_sample)
+        self.size = self.x.get_shape()[0].value or 1
+        self.y_hat = self.equation(self.x)
+        self.neg_hat = self.equation(self.y)
 
     def equation(self, x):
         el_wise_mul = x * self.weights
@@ -290,25 +257,82 @@ class BayesianPersonalizedRankingGraph(ComputationalGraph):
         return y_hat
 
     def init_loss(self):
-        self.loss = tf.log(tf.sigmoid(tf.subtract(self.pos_hat, self.neg_hat)))
-        self.reduced_loss = tf.reduce_mean(self.loss)
+        self.loss = tf.log(tf.sigmoid(tf.subtract(self.y_hat, self.neg_hat)))
+        self.reduced_loss = -tf.reduce_mean(self.loss)
         tf.summary.scalar('loss', self.reduced_loss)
 
-    def init_regularization(self):
-        self.l2_norm = tf.reduce_sum(
-            tf.add(
-                tf.multiply(self.lambda_w, tf.pow(self.weights, 2)),
-                tf.multiply(self.lambda_v,
-                            tf.transpose(tf.pow(self.params, 2)))))
 
-    def init_target(self):
-        self.target = self.l2_norm - self.reduced_loss
-        self.checked_target = tf.verify_tensor_all_finite(
-            self.target,
-            msg='NaN or Inf in target value',
-            name='target')
-        tf.summary.scalar('target', self.checked_target)
+class LatentFactorPortfolioGraph(ComputationalGraph):
 
-    def init_trainer(self):
-        self.trainer = self.optimizer.minimize(self.checked_target,
-                                               global_step=self.global_step)
+    def __init__(self, **kwargs):
+        super(LatentFactorPortfolioGraph, self).__init__(**kwargs)
+        self.variance = None
+        self.indices = None
+        self.values = None
+        self.shape = None
+
+    def set_ops(self):
+        pass
+
+    def set_params(self, *args):
+        pass
+
+    def init_placeholder(self):
+        self.indices = tf.placeholder(shape=[None, 2],
+                                      name='indices',
+                                      dtype=tf.int64)
+        self.shape = tf.placeholder(shape=[2],
+                                    name='shape',
+                                    dtype=tf.int64)
+        self.values = tf.placeholder(shape=[None],
+                                     name='values',
+                                     dtype=self.dtype)
+
+    def init_main_graph(self):
+        pass
+
+    def init_loss(self):
+        pass
+
+    def variance_estimate(self, n_users, n_samples):
+        # Variables and tensors initialization
+
+        # BEWARE - x must be only the unique entries
+        x = tf.SparseTensor(self.indices, self.values, self.shape)
+
+        sum_of_square = tf.Variable(tf.zeros(shape=[n_users, self.n_factors],
+                                             dtype=tf.float32))
+        nu = tf.Variable(tf.zeros([n_users], dtype=tf.int64))
+
+        ones = tf.ones(dtype=tf.int64, shape=[n_samples])
+        u_idx = x.indices[:, 1]
+        lim_users = tf.constant(n_users, dtype=tf.int64, shape=[1])
+        where = tf.less(u_idx, lim_users)
+        indexes = tf.reshape(tf.where(where), shape=[-1])
+        indexes = tf.nn.embedding_lookup(x.indices, indexes)[:, 1]
+
+        # computes the square for the batch (batch_size, n_factors)
+        # each row represent the square root for a user
+        user_v = tf.nn.embedding_lookup(self.params, indexes)
+        dot = tf.sparse_tensor_dense_matmul(x, self.params)
+        dot = user_v - (dot - user_v)
+        sq = tf.square(dot)
+
+        # Nice it should be working
+        sum_of_square = tf.scatter_add(sum_of_square, indexes, sq)
+        nu = tf.scatter_add(nu, indexes, ones)
+        nu = tf.tile(tf.expand_dims(tf.to_float(nu), 1), [1, self.n_factors])
+
+        self.variance = sum_of_square / nu
+
+
+class BPRLFPGraph(BayesianPersonalizedRankingGraph, LatentFactorPortfolioGraph):
+
+    def init_placeholder(self):
+        super(LatentFactorPortfolioGraph, self).init_placeholder()
+
+
+class PointwiseLFPGraph(PointwiseGraph, LatentFactorPortfolioGraph):
+
+    def init_placeholder(self):
+        super(LatentFactorPortfolioGraph, self).init_placeholder()

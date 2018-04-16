@@ -1,11 +1,12 @@
 from sklearn.base import BaseEstimator, ClassifierMixin
-from graph import RegressionGraph, BayesianPersonalizedRankingGraph as BPR
-from utility import sparse_repr
+from graph import PointwiseGraph, BayesianPersonalizedRankingGraph as BPR
+from utility import sparse_repr, loss_logistic
 from abc import abstractmethod
 from dataset import PairDataset
 import tensorflow as tf
 from tqdm import tqdm
 import numpy as np
+import warnings
 
 
 class BaseClassifier(BaseEstimator, ClassifierMixin):
@@ -18,12 +19,15 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
                  seed=1,
                  show_progress=True,
                  log_dir=None,
-                 core=None):
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10):
         self.seed = seed
         self.graph = tf.Graph()
         self.graph.seed = self.seed
-        self.session = tf.Session(graph=self.graph)
-        self.core = core
+        self.session_config = session_config
+        self.session = tf.Session(config=self.session_config,
+                                  graph=self.graph)
 
         self.dtype = dtype
         self.ntype = np.float32 if dtype is tf.float32 else np.float64
@@ -31,6 +35,12 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
         self.show_progress = show_progress
         self.batch_size = batch_size
         self.shuffle_size = shuffle_size
+
+        self.tol = tol
+        self.n_iter_no_change = n_iter_no_change
+        self._stopping = self.tol is not None
+        self._best_loss = np.inf
+        self._no_improvement = 0
 
         self.log_dir = log_dir
         self.logging_enabled = log_dir is not None
@@ -59,12 +69,6 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
     def fit(self, X, y=None):
         pass
 
-    def log_summary(self, *args):
-        _, summary, step = args
-        if self.logging_enabled:
-            self.summary_writer.add_summary(summary, step)
-            self.summary_writer.flush()
-
     @abstractmethod
     def predict(self, X):
         pass
@@ -73,8 +77,28 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
     def score(self, X, y=None, sample_weight=None):
         pass
 
+    def _update_no_improvement_count(self, acc_loss):
+        if self._stopping:
+            if acc_loss > self._best_loss - self.tol:
+                self._no_improvement += 1
+            else:
+                self._no_improvement = 0
+            if acc_loss < self._best_loss:
+                self._best_loss = acc_loss
 
-class FMRegression(BaseClassifier):
+    def save_state(self, path):
+        self.core.saver.save(self.session, path)
+
+    def load_state(self, path):
+        self.core.saver.restore(self.session, path)
+
+    def log_summary(self, summary, step):
+        if self.logging_enabled:
+            self.summary_writer.add_summary(summary, step)
+            self.summary_writer.flush()
+
+
+class FMPointwise(BaseClassifier):
 
     def __init__(self,
                  epochs=100,
@@ -91,66 +115,35 @@ class FMRegression(BaseClassifier):
                  seed=1,
                  show_progress=True,
                  log_dir=None,
-                 core=None):
-        super(FMRegression, self).__init__(epochs=epochs,
-                                           batch_size=batch_size,
-                                           shuffle_size=shuffle_size,
-                                           show_progress=show_progress,
-                                           seed=seed,
-                                           log_dir=log_dir,
-                                           core=core)
-
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10):
+        super(FMPointwise, self).__init__(epochs=epochs,
+                                          batch_size=batch_size,
+                                          shuffle_size=shuffle_size,
+                                          show_progress=show_progress,
+                                          seed=seed,
+                                          log_dir=log_dir,
+                                          session_config=session_config,
+                                          n_iter_no_change=n_iter_no_change,
+                                          tol=tol)
+        self.n_factors = n_factors
+        self.init_std = init_std
+        self.dtype = dtype
+        self.optimizer = optimizer
+        self.learning_rate = learning_rate
+        self.loss_function = loss_function
+        self.l2_w = l2_w
+        self.l2_v = l2_v
         # Computational graph initialization
-        self.core = RegressionGraph(n_factors=n_factors,
-                                    init_std=init_std,
-                                    dtype=dtype,
-                                    optimizer=optimizer,
-                                    learning_rate=learning_rate,
-                                    loss_function=loss_function,
-                                    l2_v=l2_v,
-                                    l2_w=l2_w)
-
-    def fit(self, X, y=None):
-        with self.graph.as_default():
-            input_vars = self.init_input(X, y)
-            dataset, train_iterator = self.init_dataset(*input_vars)
-            it = self.init_iterator(dataset)
-            self.init_computational_graph(it)
-
-        if it:
-            self.session.run(self.core.init_all_vars)
-
-        ops = self.core.ops
-        train_handle = self.session.run(train_iterator.string_handle())
-        feed_dict = {self.handle: train_handle}
-        for _ in tqdm(range(self.epochs),
-                      unit='epochs',
-                      disable=not self.show_progress):
-            self.session.run(train_iterator.initializer)
-            while True:
-                try:
-                    logs = self.session.run(ops, feed_dict=feed_dict)
-                    self.log_summary(*logs)
-                except tf.errors.OutOfRangeError:
-                    break
-
-    def predict(self, X):
-
-        with self.graph.as_default():
-            input_vars = self.init_input(X, None)
-            _, it = self.init_dataset(*input_vars)
-
-        pred_handle = self.session.run(it.string_handle())
-        results = []
-        self.session.run(it.initializer)
-        while True:
-            try:
-                res = self.session.run(self.core.y_hat,
-                                       feed_dict={self.handle: pred_handle})
-                results.append(res)
-            except tf.errors.OutOfRangeError:
-                break
-        return np.concatenate(results).reshape(-1)
+        self.core = PointwiseGraph(n_factors=self.n_factors,
+                                   init_std=self.init_std,
+                                   dtype=self.dtype,
+                                   optimizer=self.optimizer,
+                                   learning_rate=self.learning_rate,
+                                   loss_function=self.loss_function,
+                                   l2_v=self.l2_v,
+                                   l2_w=self.l2_w)
 
     def init_computational_graph(self, it):
         if it:
@@ -169,18 +162,6 @@ class FMRegression(BaseClassifier):
                 output_classes=dataset.output_classes)
         return iterator
 
-    def init_input(self, x, y):
-        x_d = tf.SparseTensor(*sparse_repr(x, self.ntype))
-
-        if y is not None:
-            n_samples, self.n_features = x.shape
-            y_d = tf.convert_to_tensor(y, self.dtype)
-            return x_d, y_d, n_samples, True
-        else:
-            n_samples, _ = x.shape
-            y_d = tf.zeros(x.shape[0], dtype=self.dtype)
-            return x_d, y_d, n_samples, False
-
     def init_dataset(self, x_d, y_d, n_samples, train):
         batch_size = n_samples if self.batch_size == -1 \
             else self.batch_size
@@ -191,6 +172,118 @@ class FMRegression(BaseClassifier):
 
         iterator = dataset.make_initializable_iterator()
         return dataset, iterator
+
+    def fit(self, X, y=None):
+
+        with self.graph.as_default():
+            input_vars = self.init_input(X, y)
+            dataset, train_iterator = self.init_dataset(*input_vars)
+            it = self.init_iterator(dataset)
+            self.init_computational_graph(it)
+            n_samples = input_vars[2]
+
+        if not self.session.run(tf.is_variable_initialized(
+                self.core.global_step)):
+            self.session.run(self.core.init_all_vars)
+
+        ops = self.core.ops
+        train_handle = self.session.run(train_iterator.string_handle())
+        feed_dict = {self.handle: train_handle}
+        for epoch in tqdm(range(self.epochs),
+                          unit='epochs',
+                          disable=not self.show_progress):
+            self.session.run(train_iterator.initializer)
+            loss = 0.0
+            while True:
+                try:
+                    _, summary, step, batch_loss = self.session.run(ops, feed_dict=feed_dict)
+                    self.log_summary(summary, step)
+                    loss += batch_loss
+                except tf.errors.OutOfRangeError:
+                    break
+
+            loss /= n_samples
+
+            self._update_no_improvement_count(loss)
+
+            if self._stopping and self._no_improvement > self.n_iter_no_change:
+                warnings.warn("Stopping at epoch: %s with loss %s" % (epoch, loss))
+                break
+
+    def predict(self, X):
+        with self.graph.as_default():
+            input_vars = self.init_input(X)
+            _, it = self.init_dataset(*input_vars)
+
+        pred_handle = self.session.run(it.string_handle())
+        results = []
+        self.session.run(it.initializer)
+        while True:
+            try:
+                res = self.session.run(self.core.y_hat,
+                                       feed_dict={self.handle: pred_handle})
+                results.append(res)
+            except tf.errors.OutOfRangeError:
+                break
+
+        results = np.concatenate(results).reshape(-1)
+        return self.decision_function(results)
+
+    @abstractmethod
+    def decision_function(self, x):
+        pass
+
+
+class FMRegression(FMPointwise):
+
+    def __init__(self, loss_function=tf.losses.mean_squared_error, **kwargs):
+        kwargs['loss_function'] = loss_function
+        super(FMRegression, self).__init__(**kwargs)
+
+    def init_input(self, x, y=None):
+        x.sort_indices()
+        x_d = tf.SparseTensor(*sparse_repr(x, self.ntype))
+
+        train = y is not None
+        if train:
+            n_samples, self.n_features = x.shape
+            y_d = tf.convert_to_tensor(y, self.dtype)
+        else:
+            n_samples, _ = x.shape
+            y_d = tf.zeros(x.shape[0], dtype=self.dtype)
+        return x_d, y_d, n_samples, train
+
+    def decision_function(self, x):
+        return x
+
+    def score(self, X, y=None, sample_weight=None):
+        pass
+
+
+class FMClassification(FMPointwise):
+
+    def __init__(self, loss_function=loss_logistic, **kwargs):
+        kwargs['loss_function'] = loss_function
+        super(FMClassification, self).__init__(**kwargs)
+
+    def init_input(self, x, y=None):
+        x.sort_indices()
+        x_d = tf.SparseTensor(*sparse_repr(x, self.ntype))
+
+        train = y is not None
+        if train:
+            if not (set(y) == {0, 1}):
+                raise ValueError("Input labels must be in set {0,1}.")
+            y = y * 2 - 1
+            n_samples, self.n_features = x.shape
+            y_d = tf.convert_to_tensor(y, self.dtype)
+        else:
+            n_samples, _ = x.shape
+            y_d = tf.zeros(x.shape[0], dtype=self.dtype)
+        return x_d, y_d, n_samples, train
+
+    def decision_function(self, x):
+        return (x > 0).astype(int)
 
     def score(self, X, y=None, sample_weight=None):
         pass
@@ -212,16 +305,29 @@ class FMPairwiseRanking(BaseClassifier):
                  seed=1,
                  frac=0.5,
                  show_progress=True,
-                 bootstrap_sampling='random',
-                 log_dir=None):
+                 bootstrap_sampling='uniform_user',
+                 log_dir=None,
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10):
         super(FMPairwiseRanking, self).__init__(epochs=epochs,
                                                 batch_size=batch_size,
                                                 shuffle_size=shuffle_size,
                                                 show_progress=show_progress,
                                                 seed=seed,
-                                                log_dir=log_dir)
+                                                log_dir=log_dir,
+                                                n_iter_no_change=n_iter_no_change,
+                                                tol=tol,
+                                                session_config=session_config)
         self.frac = frac
         self.bootstrap_sampling = bootstrap_sampling
+        self.n_factors = n_factors
+        self.init_std = init_std
+        self.dtype = dtype
+        self.optimizer = optimizer
+        self.learning_rate = learning_rate
+        self.l2_w = l2_w
+        self.l2_v = l2_v
         # Computational graph initialization
         self.core = BPR(n_factors=n_factors,
                         init_std=init_std,
@@ -232,7 +338,9 @@ class FMPairwiseRanking(BaseClassifier):
                         l2_w=l2_w)
 
     def init_input(self, pos, neg=None):
+        pos.sort_indices()
         if neg is not None:
+            neg.sort_indices()
             _, self.n_features = pos.shape
             return pos, neg
         return pos
@@ -254,6 +362,7 @@ class FMPairwiseRanking(BaseClassifier):
 
         with self.graph.as_default():
             pos, neg = self.init_input(pos, neg)
+            n_samples = pos.shape[0]
             dataset = self.init_dataset(pos, neg, self.bootstrap_sampling)
             self.init_computational_graph()
 
@@ -262,19 +371,28 @@ class FMPairwiseRanking(BaseClassifier):
             self.session.run(self.core.init_all_vars)
 
         ops = self.core.ops
-        for _ in tqdm(range(self.epochs), unit='epochs',
-                      disable=not self.show_progress):
+        for epoch in tqdm(range(self.epochs), unit='epochs',
+                          disable=not self.show_progress):
+            loss = 0.0
             for pos, neg in dataset.get_next():
                 feed_dict = dataset.batch_to_feed_dict(pos, neg, self.core)
-                logs = self.session.run(ops, feed_dict=feed_dict)
-                self.log_summary(*logs)
+                _, summary, step, batch_loss = self.session.run(ops, feed_dict=feed_dict)
+                self.log_summary(summary, step)
+                loss += batch_loss
+            loss /= n_samples
+
+            self._update_no_improvement_count(loss)
+
+            if self._stopping and self._no_improvement > self.n_iter_no_change:
+                warnings.warn("Stopping at epoch: %s with loss %s" % (epoch, loss))
+                break
 
     def predict(self, x):
         with self.graph.as_default():
             x = self.init_input(x)
             dataset = self.init_dataset(x)
 
-        ops = self.core.pos_hat
+        ops = self.core.y_hat
         results = []
         for pos in dataset.get_next():
             feed_dict = dataset.batch_to_feed_dict(pos, core=self.core)
@@ -284,5 +402,4 @@ class FMPairwiseRanking(BaseClassifier):
 
     def score(self, X, y=None, sample_weight=None):
         pass
-
 

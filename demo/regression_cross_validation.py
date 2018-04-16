@@ -1,6 +1,6 @@
 from sklearn.preprocessing import OneHotEncoder
-from sklearn.metrics.scorer import mean_squared_error_scorer
-from sklearn.model_selection import cross_validate, KFold
+from sklearn.model_selection import cross_validate, GroupKFold
+from scorer import MAPScorer
 from fm import FMRegression
 import pandas as pd
 import numpy as np
@@ -23,20 +23,24 @@ x = train.values[:, :-1]
 y = train.values[:, -1]
 
 csr = enc.fit(x).transform(x)
-csr.sort_indices()
+_, n_features = csr.shape
 
 print(csr.shape[0])
 epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
+k = int(sys.argv[3])
 
 fm = FMRegression(epochs=epochs,
-                  log_dir="./logs/epochs-"+str(epochs)+"_size-"+str(batch_size),
-                  batch_size=batch_size,
-                  l2_w=0.01, l2_v=0.01, init_std=0.1)
+                  log_dir="../logs/epochs-"+str(epochs)+"_size-"+str(batch_size),
+                  batch_size=batch_size, tol=1e-10,
+                  l2_w=0.01, l2_v=0.01, init_std=0.01)
 
-print(cross_validate(fm,
-                     X=csr,
-                     y=y,
-                     scoring=mean_squared_error_scorer,
-                     n_jobs=1,
-                     cv=KFold(n_splits=5)))
+scorer = MAPScorer(csr, y)
+
+groups = scorer.inter_mat[:, 0]
+
+print(cross_validate(fm, csr, y,
+                     groups=groups, scoring=scorer,
+                     fit_params={'n_features': n_features},
+                     cv=GroupKFold(n_splits=3)))
+

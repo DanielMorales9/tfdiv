@@ -36,26 +36,21 @@ x = pd.merge(pos[['user', 'item']], neg, on='user')
 pos = x[['user', 'item_x']].values
 neg = x[['user', 'item_y']].values
 
-csr_pos = enc.fit(train.values).transform(pos)
-csr_neg = enc.transform(neg)
-csr_pos.sort_indices()
-csr_neg.sort_indices()
+train_x = train.values
+x = enc.fit(train_x).transform(train_x)
+_, n_features = x.shape
+pos = enc.transform(pos)
+neg = enc.transform(neg)
+x.sort_indices()
+pos.sort_indices()
+neg.sort_indices()
 
 epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
+k = int(sys.argv[3])
 
 fm = FMPairwiseRanking(epochs=epochs,
                        bootstrap_sampling='uniform_user',
-                       log_dir="./logs/epochs-"+str(epochs)+"_size-"+str(batch_size),
-                       batch_size=batch_size, frac=0.2,
-                       l2_w=0.01, l2_v=0.01, init_std=0.1)
-
-fm.fit(csr_pos, csr_neg)
-x = enc.transform(train.values)
-leno = train.shape[0]
-x.sort_indices()
-y_pred = fm.predict(x)
-
-lenoy = len(y_pred)
-
-print(leno -lenoy)
+                       log_dir="../logs/bpr-"+str(epochs)+"_size-"+str(batch_size),
+                       batch_size=batch_size, tol=1e-10, frac=0.7,
+                       l2_w=0.01, l2_v=0.01, init_std=0.01)
