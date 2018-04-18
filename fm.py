@@ -1,8 +1,11 @@
+from graph import PointwiseGraph, BPRLFPGraph, \
+    BayesianPersonalizedRankingGraph as BPRGraph
+from utility import sparse_repr, loss_logistic, \
+    num_of_users_from_indices, unique_sparse_matrix
 from sklearn.base import BaseEstimator, ClassifierMixin
-from graph import PointwiseGraph, BayesianPersonalizedRankingGraph as BPR
-from utility import sparse_repr, loss_logistic
-from abc import abstractmethod
+from graph import PointwiseLFPGraph
 from dataset import PairDataset
+from abc import abstractmethod
 import tensorflow as tf
 from tqdm import tqdm
 import numpy as np
@@ -117,7 +120,8 @@ class FMPointwise(BaseClassifier):
                  log_dir=None,
                  session_config=None,
                  tol=None,
-                 n_iter_no_change=10):
+                 n_iter_no_change=10,
+                 cmp_graph=PointwiseGraph):
         super(FMPointwise, self).__init__(epochs=epochs,
                                           batch_size=batch_size,
                                           shuffle_size=shuffle_size,
@@ -135,15 +139,18 @@ class FMPointwise(BaseClassifier):
         self.loss_function = loss_function
         self.l2_w = l2_w
         self.l2_v = l2_v
+
+        assert issubclass(cmp_graph, PointwiseGraph), \
+            'Computational Graph must be a subclass of PointwiseGraph'
         # Computational graph initialization
-        self.core = PointwiseGraph(n_factors=self.n_factors,
-                                   init_std=self.init_std,
-                                   dtype=self.dtype,
-                                   optimizer=self.optimizer,
-                                   learning_rate=self.learning_rate,
-                                   loss_function=self.loss_function,
-                                   l2_v=self.l2_v,
-                                   l2_w=self.l2_w)
+        self.core = cmp_graph(n_factors=self.n_factors,
+                              init_std=self.init_std,
+                              dtype=self.dtype,
+                              optimizer=self.optimizer,
+                              learning_rate=self.learning_rate,
+                              loss_function=self.loss_function,
+                              l2_v=self.l2_v,
+                              l2_w=self.l2_w)
 
     def init_computational_graph(self, it):
         if it:
@@ -188,7 +195,7 @@ class FMPointwise(BaseClassifier):
 
         ops = self.core.ops
         train_handle = self.session.run(train_iterator.string_handle())
-        feed_dict = {self.handle: train_handle}
+        fd = {self.handle: train_handle}
         for epoch in tqdm(range(self.epochs),
                           unit='epochs',
                           disable=not self.show_progress):
@@ -196,7 +203,8 @@ class FMPointwise(BaseClassifier):
             loss = 0.0
             while True:
                 try:
-                    _, summary, step, batch_loss = self.session.run(ops, feed_dict=feed_dict)
+                    _, summary, step, batch_loss = self.session.run(ops,
+                                                                    feed_dict=fd)
                     self.log_summary(summary, step)
                     loss += batch_loss
                 except tf.errors.OutOfRangeError:
@@ -241,7 +249,8 @@ class FMRegression(FMPointwise):
         super(FMRegression, self).__init__(**kwargs)
 
     def init_input(self, x, y=None):
-        x.sort_indices()
+        if not x.has_sorted_indices:
+            x.sort_indices()
         x_d = tf.SparseTensor(*sparse_repr(x, self.ntype))
 
         train = y is not None
@@ -262,19 +271,23 @@ class FMRegression(FMPointwise):
 
 class FMClassification(FMPointwise):
 
-    def __init__(self, loss_function=loss_logistic, **kwargs):
+    def __init__(self, loss_function=loss_logistic,
+                 label_transform=lambda y: y * 2 - 1,
+                 **kwargs):
         kwargs['loss_function'] = loss_function
+        self.label_transform = label_transform
         super(FMClassification, self).__init__(**kwargs)
 
     def init_input(self, x, y=None):
-        x.sort_indices()
+        if not x.has_sorted_indices:
+            x.sort_indices()
         x_d = tf.SparseTensor(*sparse_repr(x, self.ntype))
 
         train = y is not None
         if train:
             if not (set(y) == {0, 1}):
                 raise ValueError("Input labels must be in set {0,1}.")
-            y = y * 2 - 1
+            y = self.label_transform(y)
             n_samples, self.n_features = x.shape
             y_d = tf.convert_to_tensor(y, self.dtype)
         else:
@@ -309,7 +322,8 @@ class FMPairwiseRanking(BaseClassifier):
                  log_dir=None,
                  session_config=None,
                  tol=None,
-                 n_iter_no_change=10):
+                 n_iter_no_change=10,
+                 cmp_graph=BPRGraph):
         super(FMPairwiseRanking, self).__init__(epochs=epochs,
                                                 batch_size=batch_size,
                                                 shuffle_size=shuffle_size,
@@ -329,18 +343,20 @@ class FMPairwiseRanking(BaseClassifier):
         self.l2_w = l2_w
         self.l2_v = l2_v
         # Computational graph initialization
-        self.core = BPR(n_factors=n_factors,
-                        init_std=init_std,
-                        dtype=dtype,
-                        optimizer=optimizer,
-                        learning_rate=learning_rate,
-                        l2_v=l2_v,
-                        l2_w=l2_w)
+        self.core = cmp_graph(n_factors=n_factors,
+                              init_std=init_std,
+                              dtype=dtype,
+                              optimizer=optimizer,
+                              learning_rate=learning_rate,
+                              l2_v=l2_v,
+                              l2_w=l2_w)
 
     def init_input(self, pos, neg=None):
-        pos.sort_indices()
+        if not pos.has_sorted_indices:
+            pos.sort_indices()
         if neg is not None:
-            neg.sort_indices()
+            if not neg.has_sorted_indices:
+                neg.sort_indices()
             _, self.n_features = pos.shape
             return pos, neg
         return pos
@@ -375,8 +391,8 @@ class FMPairwiseRanking(BaseClassifier):
                           disable=not self.show_progress):
             loss = 0.0
             for pos, neg in dataset.get_next():
-                feed_dict = dataset.batch_to_feed_dict(pos, neg, self.core)
-                _, summary, step, batch_loss = self.session.run(ops, feed_dict=feed_dict)
+                fd = dataset.batch_to_feed_dict(pos, neg, self.core)
+                _, summary, step, batch_loss = self.session.run(ops, feed_dict=fd)
                 self.log_summary(summary, step)
                 loss += batch_loss
             loss /= n_samples
@@ -402,4 +418,91 @@ class FMPairwiseRanking(BaseClassifier):
 
     def score(self, X, y=None, sample_weight=None):
         pass
+
+
+class LatentFactorPortfolio:
+
+    def __init__(self):
+        self.graph = None
+        self.session = None
+        self.core = None
+
+    def unique_rows_sparse_matrix(self, pos):
+        n_rows = pos.shape[0]
+
+        if self.use_scipy:
+            x = unique_sparse_matrix(pos)
+        else:
+            indices = pos.indices
+            indptr = pos.indptr
+            data = pos.data
+            with self.graph.as_default():
+                self.core.unique_rows_sp_matrix(n_rows)
+                tf_indptr, tf_indices, tf_data = self.core.csr
+            self.session.run(self.core.init_unique_vars)
+            hash_coo = self.session.run(self.core.hash_coo,
+                                        feed_dict={tf_indices: indices,
+                                                   tf_indptr: indptr,
+                                                   tf_data: data})
+            _, rows = np.unique(hash_coo, return_index=True)
+            x = pos[rows]
+        return x
+
+    def compute_variance(self, X):
+        indices, values, shape = sparse_repr(X, np.float32)
+        n_users = num_of_users_from_indices(indices)
+        n_samples = shape[0]
+        with self.graph.as_default():
+            with tf.name_scope(name='variance_estimate'):
+                self.core.variance_estimate(n_samples, n_users)
+
+        fd = {self.core.indices: indices,
+              self.core.values: values,
+              self.core.shape: shape}
+
+        self.session.run(self.core.init_variance_vars)
+        self.session.run(self.core.variance, feed_dict=fd)
+
+
+class FMRegressionLFP(FMRegression, LatentFactorPortfolio):
+
+    def __init__(self,
+                 loss_function=tf.losses.mean_squared_error,
+                 **kwargs):
+        kwargs['loss_function'] = loss_function
+        kwargs['cmp_graph'] = PointwiseLFPGraph
+        super(FMRegressionLFP, self).__init__(**kwargs)
+
+    def fit(self, X, y=None):
+        super(FMRegressionLFP, self).fit(X, y)
+        self.compute_variance(X)
+
+
+class FMClassificationLFP(FMClassification, LatentFactorPortfolio):
+
+    def __init__(self,
+                 loss_function=tf.losses.mean_squared_error,
+                 **kwargs):
+        kwargs['loss_function'] = loss_function
+        kwargs['cmp_graph'] = PointwiseLFPGraph
+        super(FMClassificationLFP, self).__init__(**kwargs)
+
+    def fit(self, X, y=None):
+        super(FMClassificationLFP, self).fit(X, y)
+        self.compute_variance(X)
+
+
+class FMPairwiseRankingLFP(FMPairwiseRanking, LatentFactorPortfolio):
+
+    def __init__(self, use_scipy=True, **kwargs):
+        kwargs['cmp_graph'] = BPRLFPGraph
+        super(FMPairwiseRankingLFP, self).__init__(**kwargs)
+        self.use_scipy = use_scipy
+
+    def fit(self, pos, neg=None):
+        super(FMPairwiseRankingLFP, self).fit(pos, neg)
+        # free memory
+        del neg
+        x = self.unique_rows_sparse_matrix(pos)
+        self.compute_variance(x)
 

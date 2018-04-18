@@ -74,10 +74,10 @@ class PairDataset(Dataset):
                 .format(bootstrap_sampling)
 
     def batch_to_feed_dict(self, pos, neg=None, core=None):
-        fd = {core.pos_sample: sparse_repr(pos, self.ntype)}
+        fd = {core.x: sparse_repr(pos, self.ntype)}
 
         if neg is not None:
-            fd[core.neg_sample] = sparse_repr(neg, self.ntype)
+            fd[core.y] = sparse_repr(neg, self.ntype)
         return fd
 
     def get_next(self):

@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 import tensorflow as tf
-import numpy as np
 
 
 class ComputationalGraph(ABC):
@@ -59,8 +58,10 @@ class ComputationalGraph(ABC):
             self.init_trainer()
         self.init_all_vars = tf.global_variables_initializer()
         self.summary_op = tf.summary.merge_all()
-        self.saver = tf.train.Saver()
         self.set_ops()
+
+    def save(self):
+        self.saver = tf.train.Saver()
 
     def init_params(self):
         self.lambda_w = tf.constant(self.l2_w,
@@ -100,7 +101,6 @@ class ComputationalGraph(ABC):
     def init_trainer(self):
         self.trainer = self.optimizer.minimize(self.checked_target,
                                                global_step=self.global_step)
-        self.batch_loss = self.reduced_loss * self.size
 
     def init_regularization(self):
         self.l2_norm = tf.reduce_sum(
@@ -175,7 +175,6 @@ class PointwiseGraph(ComputationalGraph):
     def init_main_graph(self):
         x = self.x
         assert x is not None, "x must be set before graph is defined"
-        self.size = x.get_shape()[0].value or 1
         el_wise_mul = x * self.weights
         weighted_sum = tf.sparse_reduce_sum(el_wise_mul, 1, keep_dims=True)
         linear_terms = tf.add(self.bias, weighted_sum, name='linear_terms')
@@ -194,6 +193,8 @@ class PointwiseGraph(ComputationalGraph):
         assert y_true is not None, "y must be set before graph is defined"
         self.loss = self.loss_function(self.y_hat, y_true)
         self.reduced_loss = tf.reduce_mean(self.loss)
+        self.size = tf.cast(tf.size(self.y_hat), dtype=self.dtype)
+        self.batch_loss = self.reduced_loss * self.size
         tf.summary.scalar('loss', self.reduced_loss)
 
 
@@ -237,7 +238,6 @@ class BayesianPersonalizedRankingGraph(ComputationalGraph):
                                        name='neg')
 
     def init_main_graph(self):
-        self.size = self.x.get_shape()[0].value or 1
         self.y_hat = self.equation(self.x)
         self.neg_hat = self.equation(self.y)
 
@@ -259,6 +259,8 @@ class BayesianPersonalizedRankingGraph(ComputationalGraph):
     def init_loss(self):
         self.loss = tf.log(tf.sigmoid(tf.subtract(self.y_hat, self.neg_hat)))
         self.reduced_loss = -tf.reduce_mean(self.loss)
+        self.size = tf.cast(tf.size(self.y_hat), dtype=self.dtype)
+        self.batch_loss = self.reduced_loss * self.size
         tf.summary.scalar('loss', self.reduced_loss)
 
 
@@ -270,6 +272,10 @@ class LatentFactorPortfolioGraph(ComputationalGraph):
         self.indices = None
         self.values = None
         self.shape = None
+        self.init_variance_vars = None
+        self.init_unique_vars = None
+        self.hash_coo = None
+        self.csr = None
 
     def set_ops(self):
         pass
@@ -294,16 +300,16 @@ class LatentFactorPortfolioGraph(ComputationalGraph):
     def init_loss(self):
         pass
 
-    def variance_estimate(self, n_users, n_samples):
+    def variance_estimate(self, n_samples, n_users):
         # Variables and tensors initialization
 
         # BEWARE - x must be only the unique entries
         x = tf.SparseTensor(self.indices, self.values, self.shape)
-
-        sum_of_square = tf.Variable(tf.zeros(shape=[n_users, self.n_factors],
-                                             dtype=tf.float32))
-        nu = tf.Variable(tf.zeros([n_users], dtype=tf.int64))
-
+        init_sum_of_square = tf.Variable(tf.zeros(shape=[n_users, self.n_factors],
+                                                  dtype=self.dtype),
+                                         name='sum_of_square')
+        init_nu = tf.Variable(tf.zeros([n_users], dtype=tf.int64),
+                              name='n_items_per_user')
         ones = tf.ones(dtype=tf.int64, shape=[n_samples])
         u_idx = x.indices[:, 1]
         lim_users = tf.constant(n_users, dtype=tf.int64, shape=[1])
@@ -319,20 +325,72 @@ class LatentFactorPortfolioGraph(ComputationalGraph):
         sq = tf.square(dot)
 
         # Nice it should be working
-        sum_of_square = tf.scatter_add(sum_of_square, indexes, sq)
-        nu = tf.scatter_add(nu, indexes, ones)
+        sum_of_square = tf.scatter_add(init_sum_of_square, indexes, sq)
+        nu = tf.scatter_add(init_nu, indexes, ones)
         nu = tf.tile(tf.expand_dims(tf.to_float(nu), 1), [1, self.n_factors])
 
         self.variance = sum_of_square / nu
+        self.init_variance_vars = tf.variables_initializer([init_nu,
+                                                            init_sum_of_square])
+
+    def unique_rows_sp_matrix(self, n_rows):
+        with tf.name_scope('unique_rows_sparse_matrix'):
+            # Placeholders init
+            indptr = tf.placeholder(dtype=tf.int64, shape=[None])
+            indices = tf.placeholder(dtype=tf.int64, shape=[None])
+            data = tf.placeholder(dtype=self.dtype, shape=[None])
+
+            self.csr = (indptr, indices, data)
+
+            # Variables init
+            init_i = tf.Variable(tf.constant(0))
+            init_col = tf.Variable(tf.constant('', shape=[n_rows, 1]),
+                                   name='init_col')
+            init_dat = tf.Variable(tf.constant('', shape=[n_rows, 1]),
+                                   name='tf_string_data')
+
+            def cond(_):
+                return True
+
+            def body(i):
+                min_i = tf.gather(indptr, i)
+                max_i = tf.gather(indptr, i + 1)
+                tf_slice = tf.range(min_i, max_i)
+                string_col = tf.as_string(tf.gather(indices, tf_slice))
+                string_dat = tf.as_string(tf.gather(data, tf_slice))
+                cols = tf.reduce_join(string_col, separator=':',
+                                      keep_dims=True)
+                dat = tf.reduce_join(string_dat, separator=':',
+                                     keep_dims=True)
+                update_col = tf.scatter_update(init_col, i, cols)
+                update_dat = tf.scatter_update(init_dat, i, dat)
+                with tf.control_dependencies([update_col, update_dat]):
+                    return i + 1
+
+            loop = tf.while_loop(cond, body, [init_i],
+                                 maximum_iterations=n_rows,
+                                 back_prop=False)
+            with tf.control_dependencies([loop]):
+                reshape_col = tf.reshape(init_col, shape=[-1])
+                reshape_dat = tf.reshape(init_dat, shape=[-1])
+            tf_stack_coo = tf.stack([reshape_col, reshape_dat])
+            tf_hash_coo = tf.reduce_join(tf_stack_coo, axis=0, separator=',')
+
+            self.init_unique_vars = tf.variables_initializer([init_i,
+                                                              init_col,
+                                                              init_dat])
+            self.hash_coo = tf_hash_coo
 
 
 class BPRLFPGraph(BayesianPersonalizedRankingGraph, LatentFactorPortfolioGraph):
 
     def init_placeholder(self):
-        super(LatentFactorPortfolioGraph, self).init_placeholder()
+        BayesianPersonalizedRankingGraph.init_placeholder(self)
+        LatentFactorPortfolioGraph.init_placeholder(self)
 
 
 class PointwiseLFPGraph(PointwiseGraph, LatentFactorPortfolioGraph):
 
     def init_placeholder(self):
-        super(LatentFactorPortfolioGraph, self).init_placeholder()
+        PointwiseGraph.init_placeholder(self)
+        LatentFactorPortfolioGraph.init_placeholder(self)

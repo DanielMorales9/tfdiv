@@ -22,7 +22,6 @@ train.loc[train['rating'] > 3, 'rating'] = 1
 y = train.values[:, -1]
 
 csr = enc.fit(x).transform(x)
-csr.sort_indices()
 
 print(csr.shape[0])
 epochs = int(sys.argv[1])
