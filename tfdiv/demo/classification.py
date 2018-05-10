@@ -24,7 +24,6 @@ y = train.values[:, -1]
 csr = enc.fit(x).transform(x)
 csr.sort_indices()
 
-print(csr.shape[0])
 epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
 

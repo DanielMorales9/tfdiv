@@ -90,10 +90,10 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
                 self._best_loss = acc_loss
 
     def save_state(self, path):
-        self.core.saver.save(self.session, path)
+        raise NotImplementedError
 
     def load_state(self, path):
-        self.core.saver.restore(self.session, path)
+        raise NotImplementedError
 
     def log_summary(self, summary, step):
         if self.logging_enabled:
@@ -154,8 +154,9 @@ class FMPointwise(BaseClassifier):
 
     def init_computational_graph(self, it):
         if it:
-            self.core.set_params(*it.get_next())
-            self.core.define_graph(self.n_features)
+            next_x, next_y = it.get_next()
+            self.core.set_params(**{'x': next_x, 'y': next_y})
+            self.core.define_graph()
 
     def init_iterator(self, dataset):
         iterator = None
@@ -190,7 +191,8 @@ class FMPointwise(BaseClassifier):
 
         if not self.session.run(tf.is_variable_initialized(
                 self.core.global_step)):
-            self.session.run(self.core.init_all_vars)
+            self.session.run(self.core.init_all_vars,
+                             feed_dict={self.core.n_features: self.n_features})
 
         ops = self.core.ops
         train_handle = self.session.run(train_iterator.string_handle())
@@ -370,7 +372,7 @@ class FMPairwiseRanking(BaseClassifier):
         return dataset
 
     def init_computational_graph(self):
-        self.core.define_graph(self.n_features)
+        self.core.define_graph()
 
     def fit(self, pos, neg=None):
 
@@ -425,38 +427,17 @@ class LatentFactorPortfolio:
         self.session = None
         self.core = None
 
-    def unique_rows_sparse_matrix(self, pos):
-        n_rows = pos.shape[0]
-
-        if self.use_scipy:
-            x = unique_sparse_matrix(pos)
-        else:
-            indices = pos.indices
-            indptr = pos.indptr
-            data = pos.data
-            with self.graph.as_default():
-                self.core.unique_rows_sp_matrix(n_rows)
-                tf_indptr, tf_indices, tf_data = self.core.csr
-            self.session.run(self.core.init_unique_vars)
-            hash_coo = self.session.run(self.core.hash_coo,
-                                        feed_dict={tf_indices: indices,
-                                                   tf_indptr: indptr,
-                                                   tf_data: data})
-            _, rows = np.unique(hash_coo, return_index=True)
-            x = pos[rows]
-        return x
-
     def compute_variance(self, X):
         indices, values, shape = sparse_repr(X, np.float32)
         n_users = num_of_users_from_indices(indices)
-        n_samples = shape[0]
         with self.graph.as_default():
             with tf.name_scope(name='variance_estimate'):
-                self.core.variance_estimate(n_samples, n_users)
+                self.core.variance_estimate()
 
         fd = {self.core.indices: indices,
               self.core.values: values,
-              self.core.shape: shape}
+              self.core.shape: shape,
+              self.core.n_users: n_users}
 
         self.session.run(self.core.init_variance_vars)
         self.session.run(self.core.variance, feed_dict=fd)
@@ -501,6 +482,5 @@ class FMPairwiseRankingLFP(FMPairwiseRanking, LatentFactorPortfolio):
         super(FMPairwiseRankingLFP, self).fit(pos, neg)
         # free memory
         del neg
-        x = self.unique_rows_sparse_matrix(pos)
         self.compute_variance(x)
 

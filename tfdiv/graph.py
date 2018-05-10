@@ -42,8 +42,7 @@ class ComputationalGraph(ABC):
         self.x = None
         self.y = None
 
-    def define_graph(self, n_features):
-        self.n_features = n_features
+    def define_graph(self):
         self.global_step = tf.train.create_global_step()
         with tf.name_scope('placeholders'):
             self.init_placeholder()
@@ -63,6 +62,7 @@ class ComputationalGraph(ABC):
         self.set_ops()
 
     def init_params(self):
+
         lambda_w = tf.constant(self.l2_w, dtype=self.dtype, name='lambda_w')
         lambda_v = tf.constant(self.l2_v, dtype=self.dtype, name='lambda_w')
         half = tf.constant(0.5, dtype=self.dtype, name='half')
@@ -70,20 +70,24 @@ class ComputationalGraph(ABC):
                                                        trainable=True,
                                                        name='bias'),
                                            msg='NaN or Inf in bias')
-        rnd_weights = tf.random_uniform([self.n_features],
+
+        rnd_weights = tf.random_uniform(tf.expand_dims(self.n_features, 0),
                                         minval=-self.init_std,
                                         maxval=self.init_std,
                                         dtype=self.dtype)
         weights = tf.verify_tensor_all_finite(tf.Variable(rnd_weights,
                                                           trainable=True,
+                                                          validate_shape=False,
                                                           name='weights'),
                                               msg='NaN or Inf in weights')
-        rnd_params = tf.random_uniform([self.n_features, self.n_factors],
+        tf_shape = tf.stack([self.n_features, self.n_factors])
+        rnd_params = tf.random_uniform(tf_shape,
                                        minval=-self.init_std,
                                        maxval=self.init_std,
                                        dtype=self.dtype)
         params = tf.verify_tensor_all_finite(tf.Variable(rnd_params,
                                                          trainable=True,
+                                                         validate_shape=False,
                                                          name='params'),
                                              msg='NaN or Inf in parameters')
         self.lambda_w = cond(self.lambda_w, lambda_w)
@@ -117,12 +121,13 @@ class ComputationalGraph(ABC):
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    @abstractmethod
-    def set_ops(self):
-        pass
+    def init_placeholder(self):
+        self.n_features = tf.placeholder(shape=[],
+                                         dtype=tf.int64, 
+                                         name='n_features')
 
     @abstractmethod
-    def init_placeholder(self):
+    def set_ops(self):
         pass
 
     @abstractmethod
@@ -160,9 +165,6 @@ class PointwiseGraph(ComputationalGraph):
                     self.summary_op,
                     self.global_step,
                     self.batch_loss]
-
-    def init_placeholder(self):
-        pass
 
     def init_main_graph(self):
         x = self.x
@@ -212,9 +214,6 @@ class BayesianPersonalizedRankingGraph(ComputationalGraph):
         self.y_hat = None
         self.neg_hat = None
 
-    def set_params(self, x, y):
-        pass
-
     def set_ops(self):
         self.ops = [self.trainer,
                     self.summary_op,
@@ -222,6 +221,7 @@ class BayesianPersonalizedRankingGraph(ComputationalGraph):
                     self.batch_loss]
 
     def init_placeholder(self):
+        ComputationalGraph.init_placeholder(self)
         self.x = tf.sparse_placeholder(self.dtype,
                                        shape=[None, self.n_features],
                                        name='pos')
@@ -261,6 +261,7 @@ class LFPGraph(ComputationalGraph):
     def __init__(self, **kwargs):
         super(LFPGraph, self).__init__(**kwargs)
         self.variance = None
+        self.unique_x = None
         self.init_variance_vars = None
         self.init_unique_vars = None
 
@@ -272,9 +273,6 @@ class LFPGraph(ComputationalGraph):
         self.b = None
         self.k = None
         self.pk = None
-
-        self.hash_coo = None
-        self.csr = None
 
     @staticmethod
     def two_dim_shape(x, rankings):
@@ -376,16 +374,15 @@ class LFPGraph(ComputationalGraph):
         return mn
 
     def init_placeholder(self):
-
         # Training samples and labels
         self.x = tf.sparse_placeholder(shape=[None, self.n_features],
                                        dtype=self.dtype, name='x')
-        self.y = tf.placeholder(shape=[None], dtype=self.dtype, name='y')
-
         # Predictions and Rankings
-        self.predictions = tf.placeholder(shape=[None, None], dtype=self.dtype,
+        self.predictions = tf.placeholder(shape=[None, None],
+                                          dtype=self.dtype,
                                           name='predictions')
-        self.rankings = tf.placeholder(shape=[None, None], dtype=tf.int32,
+        self.rankings = tf.placeholder(shape=[None, None],
+                                       dtype=tf.int32,
                                        name='rankings')
         # System-level diversity
         self.b = tf.placeholder(shape=[], dtype=self.dtype, name='b')
@@ -397,26 +394,27 @@ class LFPGraph(ComputationalGraph):
         self.n_users = tf.placeholder(dtype=tf.int64, shape=[], name='n_users')
 
         # Number of items
-        self.n_items = tf.placeholder(shape=[], dtype=tf.int64, name='n_items')
+        self.n_items = tf.placeholder(dtype=tf.int64, shape=[], name='n_items')
 
-    def variance_estimate(self, n_users):
+    def variance_estimate(self):
         # Variables and tensors initialization
-        variance = tf.ones([n_users, self.n_factors], dtype=self.dtype)
+        tf_shape = tf.stack([self.n_users, self.n_factors])
+        variance = tf.ones(tf_shape, dtype=self.dtype)
         init_var = tf.Variable(variance, name='variance',
                                validate_shape=False,
                                trainable=False)
-        init_sum_of_square = tf.Variable(tf.zeros(shape=[n_users, self.n_factors],
+        init_sum_of_square = tf.Variable(tf.zeros(shape=tf_shape,
                                                   dtype=self.dtype),
                                          name='sum_of_square',
                                          validate_shape=False,
                                          trainable=False)
-        init_nu = tf.Variable(tf.zeros(shape=n_users, dtype=tf.int64),
+        init_nu = tf.Variable(tf.zeros(shape=self.n_users, dtype=tf.int64),
                               name='n_items_per_user',
                               validate_shape=False,
                               trainable=False)
         ones = tf.ones(dtype=tf.int64, shape=tf.shape(self.x)[0])
         u_idx = self.x.indices[:, 1]
-        lim_users = tf.constant(n_users, dtype=tf.int64, shape=[1])
+        lim_users = tf.expand_dims(self.n_users, dim=0)
         where = tf.less(u_idx, lim_users)
         indexes = tf.reshape(tf.where(where), shape=[-1])
         indexes = tf.nn.embedding_lookup(self.x.indices, indexes)[:, 1]
@@ -438,53 +436,48 @@ class LFPGraph(ComputationalGraph):
                                                             init_nu,
                                                             init_sum_of_square])
 
-    def unique_rows_sp_matrix(self, n_rows):
-        with tf.name_scope('unique_rows_sparse_matrix'):
-            # Placeholders init
-            indptr = tf.placeholder(dtype=tf.int64, shape=[None])
-            indices = tf.placeholder(dtype=tf.int64, shape=[None])
-            data = tf.placeholder(dtype=self.dtype, shape=[None])
+    def unique_rows_sparse_tensor(self):
+        n_users = self.n_users
+        n_items = self.n_items
+        max_allowed_features = n_users + n_items
+        less_cond = tf.less(self.x.indices[:, 1], max_allowed_features)
+        retained_x = tf.sparse_retain(self.x, less_cond)
+        retained_idx = retained_x.indices
+        tf_shape = tf.to_int64(tf.stack([tf.shape(self.x)[0], 4]))
+        re_idx = tf.reshape(retained_idx, tf_shape)
+        enc_ten = (re_idx[:, 1] + 1) * tf.reduce_max(re_idx[:, 3]) + re_idx[:, 3]
+        nq, idx = tf.unique(enc_ten)
+        num_partitions = tf.shape(nq)[0]
+        sparse_rows = tf.unsorted_segment_min(re_idx[:, 0], idx, num_partitions)
 
-            self.csr = (indptr, indices, data)
+        rng = tf.range(tf.shape(self.x.indices, out_type=tf.int64)[0])
+        max_rows = tf.segment_max(rng, self.x.indices[:, 0]) + 1
+        min_rows = tf.segment_min(rng, self.x.indices[:, 0])
+        min_max = tf.stack([min_rows, max_rows], axis=1)
+        ga = tf.gather(min_max, sparse_rows)
+        num_rows = tf.shape(ga)[0]
+        init_array = tf.TensorArray(tf.int64, size=num_rows, infer_shape=False)
 
-            # Variables init
-            init_i = tf.Variable(tf.constant(0), trainable=False)
-            init_col = tf.Variable(tf.constant('', shape=[n_rows, 1]),
-                                   name='init_col', trainable=False)
-            init_dat = tf.Variable(tf.constant('', shape=[n_rows, 1]),
-                                   name='tf_string_data', trainable=False)
+        def loop_body(i, ta):
+            return i + 1, ta.write(i, tf.range(ga[i, 0], ga[i, 1]))
 
-            def conditions(_):
-                return True
+        _, result_array = tf.while_loop(lambda i, ta: i < num_rows,
+                                        loop_body, [0, init_array])
+        rows = result_array.concat()
+        trues = tf.ones(tf.shape(rows)[0], dtype=tf.bool)
+        mask = tf.zeros((tf.shape(self.x.indices)[0]), dtype=tf.bool)
+        init_mask = tf.Variable(mask, validate_shape=False, trainable=False)
+        new_mask = tf.scatter_update(init_mask, rows, trues)
 
-            def body(i):
-                min_i = tf.gather(indptr, i)
-                max_i = tf.gather(indptr, i + 1)
-                tf_slice = tf.range(min_i, max_i)
-                string_col = tf.as_string(tf.gather(indices, tf_slice))
-                string_dat = tf.as_string(tf.gather(data, tf_slice))
-                cols = tf.reduce_join(string_col, separator=':',
-                                      keep_dims=True)
-                dat = tf.reduce_join(string_dat, separator=':',
-                                     keep_dims=True)
-                update_col = tf.scatter_update(init_col, i, cols)
-                update_dat = tf.scatter_update(init_dat, i, dat)
-                with tf.control_dependencies([update_col, update_dat]):
-                    return i + 1
-
-            loop = tf.while_loop(conditions, body, [init_i],
-                                 maximum_iterations=n_rows,
-                                 back_prop=False)
-            with tf.control_dependencies([loop]):
-                reshape_col = tf.reshape(init_col, shape=[-1])
-                reshape_dat = tf.reshape(init_dat, shape=[-1])
-            tf_stack_coo = tf.stack([reshape_col, reshape_dat])
-            tf_hash_coo = tf.reduce_join(tf_stack_coo, axis=0, separator=',')
-
-            self.init_unique_vars = tf.variables_initializer([init_i,
-                                                              init_col,
-                                                              init_dat])
-            self.hash_coo = tf_hash_coo
+        new_x = tf.sparse_retain(self.x, new_mask)
+        unq, idx = tf.unique(new_x.indices[:, 0])
+        new_idx = tf.stack([tf.to_int64(idx), new_x.indices[:, 1]], axis=1)
+        new_shape = tf.stack([tf.shape(unq, out_type=tf.int64)[0],
+                              new_x.dense_shape[1]])
+        self.unique_x = tf.SparseTensor(indices=new_idx,
+                                        values=new_x.values,
+                                        dense_shape=new_shape)
+        self.init_unique_vars = tf.variables_initializer([init_mask])
 
     def ranking_computation(self):
         shape = tf.stack([self.n_users, self.n_items])
@@ -517,4 +510,5 @@ class PointwiseLFPGraph(PointwiseGraph, LFPGraph):
 
     def init_placeholder(self):
         PointwiseGraph.init_placeholder(self)
+        self.y = tf.placeholder(shape=[None], dtype=self.dtype, name='y')
         LFPGraph.init_placeholder(self)
