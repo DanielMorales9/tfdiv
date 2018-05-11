@@ -10,13 +10,16 @@ class ComputationalGraph(ABC):
                  l2_w=0.001,
                  l2_v=0.001,
                  n_factors=10,
-                 init_std=0.01):
+                 init_std=0.01,
+                 learning_rate=0.01,
+                 optimizer=tf.train.AdamOptimizer):
         self.n_factors = n_factors
         self.dtype = dtype
         self.l2_v = l2_v
         self.l2_w = l2_w
         self.init_std = init_std
-        self.optimizer = None
+        self.learning_rate = learning_rate
+        self.optimizer = optimizer(learning_rate=self.learning_rate)
         self.init_all_vars = None
         self.n_features = None
         self.summary_op = None
@@ -59,7 +62,7 @@ class ComputationalGraph(ABC):
             self.init_trainer()
         self.init_all_vars = tf.global_variables_initializer()
         self.summary_op = tf.summary.merge_all()
-        self.set_ops()
+        self.fit_operations()
 
     def init_params(self):
 
@@ -126,9 +129,11 @@ class ComputationalGraph(ABC):
                                          dtype=tf.int64, 
                                          name='n_features')
 
-    @abstractmethod
-    def set_ops(self):
-        pass
+    def fit_operations(self):
+        self.ops = [self.trainer,
+                    self.summary_op,
+                    self.global_step,
+                    self.batch_loss]
 
     @abstractmethod
     def init_main_graph(self):
@@ -142,29 +147,10 @@ class ComputationalGraph(ABC):
 class PointwiseGraph(ComputationalGraph):
 
     def __init__(self,
-                 n_factors=10,
-                 dtype=tf.float32,
-                 init_std=0.01,
                  loss_function=tf.losses.mean_squared_error,
-                 l2_v=0.001,
-                 l2_w=0.001,
-                 learning_rate=0.001,
-                 optimizer=tf.train.AdamOptimizer):
-        super(PointwiseGraph, self).__init__(
-            dtype=dtype,
-            init_std=init_std,
-            n_factors=n_factors,
-            l2_w=l2_w,
-            l2_v=l2_v)
-        self.learning_rate = learning_rate
+                 **kwargs):
+        super(PointwiseGraph, self).__init__(**kwargs)
         self.loss_function = loss_function
-        self.optimizer = optimizer(learning_rate=self.learning_rate)
-
-    def set_ops(self):
-        self.ops = [self.trainer,
-                    self.summary_op,
-                    self.global_step,
-                    self.batch_loss]
 
     def init_main_graph(self):
         x = self.x
@@ -192,36 +178,46 @@ class PointwiseGraph(ComputationalGraph):
         tf.summary.scalar('loss', self.reduced_loss)
 
 
-class BayesianPersonalizedRankingGraph(ComputationalGraph):
+# Ranking Classes
+class RankingGraph(ComputationalGraph):
 
-    def __init__(self,
-                 n_factors=10,
-                 dtype=tf.float32,
-                 init_std=0.01,
-                 l2_v=0.001,
-                 l2_w=0.001,
-                 learning_rate=0.001,
-                 optimizer=tf.train.AdamOptimizer):
-        super(BayesianPersonalizedRankingGraph, self).__init__(
-            dtype=dtype,
-            init_std=init_std,
-            n_factors=n_factors,
-            l2_w=l2_w,
-            l2_v=l2_v
-        )
-        self.learning_rate = learning_rate
-        self.optimizer = optimizer(learning_rate=self.learning_rate)
-        self.y_hat = None
-        self.neg_hat = None
-
-    def set_ops(self):
-        self.ops = [self.trainer,
-                    self.summary_op,
-                    self.global_step,
-                    self.batch_loss]
+    def __init__(self, **kwargs):
+        super(RankingGraph, self).__init__(**kwargs)
+        self.k = None
+        self.n_users = None
+        self.n_items = None
+        self.pred = None
+        self.ranking_results = None
 
     def init_placeholder(self):
         ComputationalGraph.init_placeholder(self)
+        self.k = tf.placeholder(shape=[], dtype=tf.int32, name='k')
+        self.n_users = tf.placeholder(dtype=tf.int64, shape=[], name='n_users')
+        self.n_items = tf.placeholder(dtype=tf.int64, shape=[], name='n_items')
+        self.pred = tf.placeholder(dtype=self.dtype, shape=[None], name='y_pred')
+
+    def ranking_computation(self):
+        shape = tf.stack([self.n_users, self.n_items])
+        predictions = tf.reshape(self.pred, shape)
+        self.ranking_results = tf.nn.top_k(predictions, k=self.k)
+
+
+class PointwiseRankingGraph(PointwiseGraph, RankingGraph):
+
+    def __init__(self, **kwargs):
+        super(PointwiseRankingGraph, self).__init__(**kwargs)
+
+
+class BayesianPersonalizedRankingGraph(RankingGraph):
+
+    def __init__(self,
+                 **kwargs):
+        super(BayesianPersonalizedRankingGraph, self).__init__(**kwargs)
+        self.y_hat = None
+        self.neg_hat = None
+
+    def init_placeholder(self):
+        RankingGraph.init_placeholder(self)
         self.x = tf.sparse_placeholder(self.dtype,
                                        shape=[None, self.n_features],
                                        name='pos')
@@ -256,22 +252,20 @@ class BayesianPersonalizedRankingGraph(ComputationalGraph):
         tf.summary.scalar('loss', self.reduced_loss)
 
 
-class LFPGraph(ComputationalGraph):
+# Latent Portfolio Classes
+class LatentFactorPortfolioGraph(RankingGraph):
 
     def __init__(self, **kwargs):
-        super(LFPGraph, self).__init__(**kwargs)
+        super(LatentFactorPortfolioGraph, self).__init__(**kwargs)
         self.variance = None
         self.unique_x = None
         self.init_variance_vars = None
         self.init_unique_vars = None
 
-        self.n_items = None
-        self.n_users = None
-        self.ranking_results = None
+        self.delta_f = None
         self.predictions = None
         self.rankings = None
         self.b = None
-        self.k = None
         self.pk = None
 
     @staticmethod
@@ -286,7 +280,7 @@ class LFPGraph(ComputationalGraph):
 
     @staticmethod
     def shape_cube_by_rank(x, rankings):
-        cube_shape = LFPGraph.three_dim_shape(x, rankings)
+        cube_shape = LatentFactorPortfolioGraph.three_dim_shape(x, rankings)
         x_cube = tf.sparse_reshape(x, shape=cube_shape)
         return x_cube
 
@@ -313,9 +307,9 @@ class LFPGraph(ComputationalGraph):
 
     @staticmethod
     def reshape_dataset(n_users, rankings, x):
-        shaped_x = LFPGraph.shape_cube_by_rank(x, rankings)
-        swapped_x = LFPGraph.swap_tensor_by_rank(shaped_x, rankings)
-        zeroed_x, users_x = LFPGraph.zero_users_columns(swapped_x, n_users, axis=2)
+        shaped_x = LatentFactorPortfolioGraph.shape_cube_by_rank(x, rankings)
+        swapped_x = LatentFactorPortfolioGraph.swap_tensor_by_rank(shaped_x, rankings)
+        zeroed_x, users_x = LatentFactorPortfolioGraph.zero_users_columns(swapped_x, n_users, axis=2)
         return zeroed_x, users_x
 
     @staticmethod
@@ -348,10 +342,10 @@ class LFPGraph(ComputationalGraph):
 
     @staticmethod
     def dot_product(params, rankings, x):
-        two_dims = LFPGraph.two_dim_shape(x, rankings)
+        two_dims = LatentFactorPortfolioGraph.two_dim_shape(x, rankings)
         x_two_dim = tf.sparse_reshape(x, shape=two_dims)
         dot_prod = tf.sparse_tensor_dense_matmul(x_two_dim, params)
-        three_dims = LFPGraph.three_dim_shape(params, rankings)
+        three_dims = LatentFactorPortfolioGraph.three_dim_shape(params, rankings)
         dot_prod_three_dim = tf.reshape(dot_prod, shape=three_dims)
         return dot_prod_three_dim
 
@@ -365,7 +359,7 @@ class LFPGraph(ComputationalGraph):
 
     @staticmethod
     def third_term(k, variance, dot_prod, dtype=tf.float32):
-        pm = LFPGraph.ranking_weights(k, dtype=dtype)
+        pm = LatentFactorPortfolioGraph.ranking_weights(k, dtype=dtype)
         ranked_dot = dot_prod[:, :k]
         unranked_dot = dot_prod[:, k:]
         a = tf.tensordot(tf.transpose(ranked_dot, perm=(0, 2, 1)), pm, axes=[2, 0])
@@ -374,9 +368,7 @@ class LFPGraph(ComputationalGraph):
         return mn
 
     def init_placeholder(self):
-        # Training samples and labels
-        self.x = tf.sparse_placeholder(shape=[None, self.n_features],
-                                       dtype=self.dtype, name='x')
+        RankingGraph.init_placeholder(self)
         # Predictions and Rankings
         self.predictions = tf.placeholder(shape=[None, None],
                                           dtype=self.dtype,
@@ -386,15 +378,6 @@ class LFPGraph(ComputationalGraph):
                                        name='rankings')
         # System-level diversity
         self.b = tf.placeholder(shape=[], dtype=self.dtype, name='b')
-
-        # Rank level
-        self.k = tf.placeholder(shape=[], dtype=tf.int32, name='k')
-
-        # Number of users
-        self.n_users = tf.placeholder(dtype=tf.int64, shape=[], name='n_users')
-
-        # Number of items
-        self.n_items = tf.placeholder(dtype=tf.int64, shape=[], name='n_items')
 
     def variance_estimate(self):
         # Variables and tensors initialization
@@ -414,7 +397,7 @@ class LFPGraph(ComputationalGraph):
                               trainable=False)
         ones = tf.ones(dtype=tf.int64, shape=tf.shape(self.x)[0])
         u_idx = self.x.indices[:, 1]
-        lim_users = tf.expand_dims(self.n_users, dim=0)
+        lim_users = tf.expand_dims(self.n_users, axis=0)
         where = tf.less(u_idx, lim_users)
         indexes = tf.reshape(tf.where(where), shape=[-1])
         indexes = tf.nn.embedding_lookup(self.x.indices, indexes)[:, 1]
@@ -426,7 +409,6 @@ class LFPGraph(ComputationalGraph):
         dot = user_v - (dot - user_v)
         sq = tf.square(dot)
 
-        # Nice it should be working
         sum_of_square = tf.scatter_add(init_sum_of_square, indexes, sq)
         nu = tf.scatter_add(init_nu, indexes, ones)
         nu = tf.tile(tf.expand_dims(tf.to_float(nu), 1), [1, self.n_factors])
@@ -479,11 +461,6 @@ class LFPGraph(ComputationalGraph):
                                         dense_shape=new_shape)
         self.init_unique_vars = tf.variables_initializer([init_mask])
 
-    def ranking_computation(self):
-        shape = tf.stack([self.n_users, self.n_items])
-        predictions = tf.reshape(self.y_hat, shape)
-        self.ranking_results = tf.nn.top_k(predictions, k=self.k)
-
     def delta_f_computation(self):
         zero_x, users_x = self.reshape_dataset(self.n_users, self.rankings, self.x)
         users = users_x.indices[:, 2]
@@ -491,24 +468,22 @@ class LFPGraph(ComputationalGraph):
         self.pk = self.ranking_coefficient(self.k, self.dtype)
 
         first_term = self.predictions[:, self.k:]
-        dot_prod = LFPGraph.dot_product(self.params, self.rankings, zero_x)
-        second_term = LFPGraph.second_term(self.k, self.pk, user_var, dot_prod)
-        third_term = LFPGraph.third_term(self.k, user_var, dot_prod, self.dtype)
+        dot_prod = LatentFactorPortfolioGraph.dot_product(self.params, self.rankings, zero_x)
+        second_term = LatentFactorPortfolioGraph.second_term(self.k, self.pk, user_var, dot_prod)
+        third_term = LatentFactorPortfolioGraph.third_term(self.k, user_var, dot_prod, self.dtype)
         second_n_third = second_term + 2 * third_term
-        delta = self.pk * (first_term - self.b * second_n_third)
-        return delta
+        self.delta_f = self.pk * (first_term - self.b * second_n_third)
 
 
-class BPRLFPGraph(BayesianPersonalizedRankingGraph, LFPGraph):
+class PointwiseLFPGraph(PointwiseRankingGraph, LatentFactorPortfolioGraph):
+
+    def init_placeholder(self):
+        PointwiseRankingGraph.init_placeholder(self)
+        LatentFactorPortfolioGraph.init_placeholder(self)
+
+
+class BPRLFPGraph(BayesianPersonalizedRankingGraph, LatentFactorPortfolioGraph):
 
     def init_placeholder(self):
         BayesianPersonalizedRankingGraph.init_placeholder(self)
-        LFPGraph.init_placeholder(self)
-
-
-class PointwiseLFPGraph(PointwiseGraph, LFPGraph):
-
-    def init_placeholder(self):
-        PointwiseGraph.init_placeholder(self)
-        self.y = tf.placeholder(shape=[None], dtype=self.dtype, name='y')
-        LFPGraph.init_placeholder(self)
+        LatentFactorPortfolioGraph.init_placeholder(self)

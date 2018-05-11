@@ -13,17 +13,15 @@ def sparse_repr(x, ntype):
     return indices, values, shape
 
 
-def cartesian_product(a, b):
-    tile_a = tf.tile(a, [b.get_shape()[0]])
-    repeat_a = tf.contrib.framework.sort(tile_a)
-    tile_b = tf.tile(b, [tf.shape(a)[0]])
-    trans = tf.transpose([repeat_a, tile_b])
-    cp = tf.contrib.framework.sort(trans, axis=0)
-    return cp
+def cartesian_product(x, y):
+    return np.transpose([np.repeat(x, len(y)), np.tile(y, len(x))])
 
 
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
+def matrix_swap_at_k(index, k, matrix):
+    for r, c in enumerate(index):
+        temp = matrix[r, c + k]
+        matrix[r, c + k] = matrix[r, k]
+        matrix[r, k] = temp
 
 
 def unique_sparse_matrix(pos):
@@ -49,10 +47,24 @@ def unique_sparse_matrix(pos):
     x = pos[row_indices]
     return x
 
+
+# ---- Tensorflow utility ----
+def tf_cartesian_product(a, b):
+    tile_a = tf.tile(a, [b.get_shape()[0]])
+    repeat_a = tf.contrib.framework.sort(tile_a)
+    tile_b = tf.tile(b, [tf.shape(a)[0]])
+    trans = tf.transpose([repeat_a, tile_b])
+    cp = tf.contrib.framework.sort(trans, axis=0)
+    return cp
+
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
 # Predefined loss functions
 # Should take 2 tf.Ops: outputs, targets and should return tf.Op of element-wise losses
 # Be careful about dimensionality -- maybe tf.transpose(outputs) is needed
-
 
 def loss_logistic(outputs, y):
     margins = -y * tf.transpose(outputs)

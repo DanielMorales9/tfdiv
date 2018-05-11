@@ -1,7 +1,6 @@
-from sklearn.model_selection import cross_validate, GroupKFold
 from sklearn.preprocessing import OneHotEncoder
-from tfdiv.fm import FMPairwiseRanking
-from tfdiv.scorer import MAPScorer
+from tfdiv.fm import FMBayesianPersonalizedRankingLFP
+from tfdiv.utility import cartesian_product
 import pandas as pd
 import numpy as np
 import sys
@@ -35,35 +34,30 @@ neg = pd.DataFrame(df)
 
 x = pd.merge(pos[['user', 'item']], neg, on='user')
 
-users = x.user.values
 pos = x[['user', 'item_x']].values
 neg = x[['user', 'item_y']].values
 
 train_x = train.values
 x = enc.fit(train_x).transform(train_x)
 _, n_features = x.shape
-csr_pos = enc.transform(pos)
-csr_neg = enc.transform(neg)
+pos = enc.transform(pos)
+neg = enc.transform(neg)
 x.sort_indices()
-csr_pos.sort_indices()
-csr_neg.sort_indices()
+pos.sort_indices()
+neg.sort_indices()
 
 epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
 
-fm = FMPairwiseRanking(epochs=epochs,
-                       bootstrap_sampling='uniform_user',
-                       log_dir="../logs/bpr-epochs-"+str(epochs)+"_size-"+str(batch_size),
-                       batch_size=batch_size, tol=1e-10,
-                       l2_w=0.01, l2_v=0.01, init_std=0.01)
+fm = FMBayesianPersonalizedRankingLFP(epochs=epochs,
+                                      bootstrap_sampling='uniform_user',
+                                      log_dir="../logs/bpr-"+str(epochs)+"_size-"+str(batch_size),
+                                      batch_size=batch_size, tol=1e-4, frac=0.7,
+                                      l2_w=0.01, l2_v=0.01, init_std=0.01)
+fm.fit(pos, neg, n_users, n_items)
 
+x = enc.transform(cartesian_product(train.user.unique(), train.item.unique()))
 
-scorer = MAPScorer(x)
+a = fm.predict(x, n_users, n_items)
 
-groups = users
-
-print(cross_validate(fm, csr_pos, csr_neg,
-                     groups=groups, scoring=scorer,
-                     fit_params={'n_features': n_features},
-                     cv=GroupKFold(n_splits=3)))
-
+print(a)
