@@ -1,16 +1,10 @@
-from ..graph import PointwiseGraph, \
-    PointwiseLFPGraph as PointLFP, \
-    BPRLFPGraph
-from tfdiv.utility import sparse_repr
+from ..graph import PointwiseGraph, PointwiseLFPGraph as PointLFP, BPRLFPGraph
 from sklearn.preprocessing import OneHotEncoder
+from tfdiv.utility import sparse_repr
 from unittest.case import TestCase
 import tensorflow as tf
 import numpy as np
 import unittest
-
-# TODO: Test Classifiers
-# TODO: Test Ranking classes
-# TODO: Test Latent Factor Portfolio
 
 
 # ---- Computational Graphs Tests ----

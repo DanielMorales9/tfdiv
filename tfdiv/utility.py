@@ -20,7 +20,7 @@ def cartesian_product(x, y):
     return np.transpose([np.repeat(x, len(y)), np.tile(y, len(x))])
 
 
-def _matrix_swap_at_k(index, k, matrix):
+def matrix_swap_at_k(index, k, matrix):
     for r, c in enumerate(index):
         temp = matrix[r, c + k]
         matrix[r, c + k] = matrix[r, k]

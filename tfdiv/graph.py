@@ -5,8 +5,6 @@ from tfdiv.utility import cond
 
 class ComputationalGraph(ABC):
 
-    # TODO: Implement save and restore API
-
     def __init__(self,
                  dtype=tf.float32,
                  l2_w=0.001,

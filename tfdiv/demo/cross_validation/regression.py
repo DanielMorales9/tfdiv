@@ -35,6 +35,5 @@ fm = Regression(epochs=epochs,
                 l2_w=0.01, l2_v=0.01, init_std=0.01)
 
 mse = make_scorer(mean_squared_error)
-print(cross_validate(fm, csr, y, scoring=mse,
-                     cv=KFold(n_splits=3)))
+print(cross_validate(fm, csr, y, scoring=mse, cv=KFold(n_splits=10, shuffle=True)))
 

@@ -1,7 +1,7 @@
 from tfdiv.graph import PointwiseGraph, BPRLFPGraph, \
     BayesianPersonalizedRankingGraph as BPRGraph, PointwiseRankingGraph
 from tfdiv.utility import sparse_repr, loss_logistic, \
-    _matrix_swap_at_k
+    matrix_swap_at_k
 from sklearn.base import BaseEstimator, ClassifierMixin
 from tfdiv.graph import PointwiseLFPGraph
 from tfdiv.dataset import PairDataset
@@ -697,8 +697,8 @@ class LatentFactorPortfolio(Ranking):
             delta_f = self.session.run(self.core.delta_f,
                                        feed_dict=parametric_feed_dict(self, pred, rank, i))
             delta_arg_max = np.argmax(delta_f, axis=1)
-            _matrix_swap_at_k(delta_arg_max, k, pred)
-            _matrix_swap_at_k(delta_arg_max, k, rank)
+            matrix_swap_at_k(delta_arg_max, k, pred)
+            matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
 
 
@@ -780,8 +780,8 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
             delta_f = self.session.run(self.core.delta_f,
                                        feed_dict=parametric_feed_dict(self, pred, rank, i))
             delta_arg_max = np.argmax(delta_f, axis=1)
-            _matrix_swap_at_k(delta_arg_max, k, pred)
-            _matrix_swap_at_k(delta_arg_max, k, rank)
+            matrix_swap_at_k(delta_arg_max, k, pred)
+            matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
 
     def fit(self, X, y, n_users, n_items):
@@ -872,8 +872,8 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
             delta_f = self.session.run(self.core.delta_f,
                                        feed_dict=parametric_feed_dict(self, pred, rank, i))
             delta_arg_max = np.argmax(delta_f, axis=1)
-            _matrix_swap_at_k(delta_arg_max, k, pred)
-            _matrix_swap_at_k(delta_arg_max, k, rank)
+            matrix_swap_at_k(delta_arg_max, k, pred)
+            matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
 
     def fit(self, X, y, n_users, n_items):
