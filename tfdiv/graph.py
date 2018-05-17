@@ -5,6 +5,8 @@ from tfdiv.utility import cond
 
 class ComputationalGraph(ABC):
 
+    # TODO: Implement save and restore API
+
     def __init__(self,
                  dtype=tf.float32,
                  l2_w=0.001,
@@ -40,7 +42,6 @@ class ComputationalGraph(ABC):
         self.init_all_vars = None
         self.batch_loss = None
         self.size = None
-        self.saver = None
         self.ops = None
         self.x = None
         self.y = None
@@ -126,7 +127,7 @@ class ComputationalGraph(ABC):
 
     def init_placeholder(self):
         self.n_features = tf.placeholder(shape=[],
-                                         dtype=tf.int64, 
+                                         dtype=tf.int64,
                                          name='n_features')
 
     def fit_operations(self):
@@ -148,8 +149,20 @@ class PointwiseGraph(ComputationalGraph):
 
     def __init__(self,
                  loss_function=tf.losses.mean_squared_error,
-                 **kwargs):
-        super(PointwiseGraph, self).__init__(**kwargs)
+                 dtype=tf.float32,
+                 l2_w=0.001,
+                 l2_v=0.001,
+                 n_factors=10,
+                 init_std=0.01,
+                 learning_rate=0.01,
+                 optimizer=tf.train.AdamOptimizer):
+        super(PointwiseGraph, self).__init__(dtype=dtype,
+                                             l2_w=l2_w,
+                                             l2_v=l2_v,
+                                             n_factors=n_factors,
+                                             init_std=init_std,
+                                             learning_rate=learning_rate,
+                                             optimizer=optimizer)
         self.loss_function = loss_function
 
     def init_main_graph(self):
@@ -181,8 +194,21 @@ class PointwiseGraph(ComputationalGraph):
 # Ranking Classes
 class RankingGraph(ComputationalGraph):
 
-    def __init__(self, **kwargs):
-        super(RankingGraph, self).__init__(**kwargs)
+    def __init__(self,
+                 dtype=tf.float32,
+                 l2_w=0.001,
+                 l2_v=0.001,
+                 n_factors=10,
+                 init_std=0.01,
+                 learning_rate=0.01,
+                 optimizer=tf.train.AdamOptimizer):
+        super(RankingGraph, self).__init__(dtype=dtype,
+                                           l2_w=l2_w,
+                                           l2_v=l2_v,
+                                           n_factors=n_factors,
+                                           init_std=init_std,
+                                           learning_rate=learning_rate,
+                                           optimizer=optimizer)
         self.k = None
         self.n_users = None
         self.n_items = None
@@ -204,15 +230,40 @@ class RankingGraph(ComputationalGraph):
 
 class PointwiseRankingGraph(PointwiseGraph, RankingGraph):
 
-    def __init__(self, **kwargs):
-        super(PointwiseRankingGraph, self).__init__(**kwargs)
+    def __init__(self,
+                 dtype=tf.float32,
+                 l2_w=0.001,
+                 l2_v=0.001,
+                 n_factors=10,
+                 init_std=0.01,
+                 learning_rate=0.01,
+                 optimizer=tf.train.AdamOptimizer):
+        super(PointwiseRankingGraph, self).__init__(dtype=dtype,
+                                                    l2_w=l2_w,
+                                                    l2_v=l2_v,
+                                                    n_factors=n_factors,
+                                                    init_std=init_std,
+                                                    learning_rate=learning_rate,
+                                                    optimizer=optimizer)
 
 
 class BayesianPersonalizedRankingGraph(RankingGraph):
 
     def __init__(self,
-                 **kwargs):
-        super(BayesianPersonalizedRankingGraph, self).__init__(**kwargs)
+                 dtype=tf.float32,
+                 l2_w=0.001,
+                 l2_v=0.001,
+                 n_factors=10,
+                 init_std=0.01,
+                 learning_rate=0.01,
+                 optimizer=tf.train.AdamOptimizer):
+        super(BayesianPersonalizedRankingGraph, self).__init__(dtype=dtype,
+                                                               l2_w=l2_w,
+                                                               l2_v=l2_v,
+                                                               n_factors=n_factors,
+                                                               init_std=init_std,
+                                                               learning_rate=learning_rate,
+                                                               optimizer=optimizer)
         self.y_hat = None
         self.neg_hat = None
 
@@ -255,8 +306,21 @@ class BayesianPersonalizedRankingGraph(RankingGraph):
 # Latent Portfolio Classes
 class LatentFactorPortfolioGraph(RankingGraph):
 
-    def __init__(self, **kwargs):
-        super(LatentFactorPortfolioGraph, self).__init__(**kwargs)
+    def __init__(self,
+                 dtype=tf.float32,
+                 l2_w=0.001,
+                 l2_v=0.001,
+                 n_factors=10,
+                 init_std=0.01,
+                 learning_rate=0.01,
+                 optimizer=tf.train.AdamOptimizer):
+        super(LatentFactorPortfolioGraph, self).__init__(dtype=dtype,
+                                                         l2_w=l2_w,
+                                                         l2_v=l2_v,
+                                                         n_factors=n_factors,
+                                                         init_std=init_std,
+                                                         learning_rate=learning_rate,
+                                                         optimizer=optimizer)
         self.variance = None
         self.unique_x = None
         self.init_variance_vars = None

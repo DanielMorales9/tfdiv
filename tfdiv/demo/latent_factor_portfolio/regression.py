@@ -1,5 +1,5 @@
 from sklearn.preprocessing import OneHotEncoder
-from tfdiv.fm import FMRegressionLFP
+from tfdiv.fm import RegressionLFP
 from tfdiv.utility import cartesian_product
 import pandas as pd
 import numpy as np
@@ -26,10 +26,10 @@ csr = enc.fit(x).transform(x)
 epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
 
-fm = FMRegressionLFP(epochs=epochs,
-                     log_dir="../logs/regression-"+str(epochs)+"_size-"+str(batch_size),
-                     batch_size=batch_size, tol=1e-10,
-                     l2_w=0.01, l2_v=0.01, init_std=0.01)
+fm = RegressionLFP(epochs=epochs,
+                   log_dir="../logs/regression-"+str(epochs)+"_size-"+str(batch_size),
+                   batch_size=batch_size, tol=1e-10,
+                   l2_w=0.01, l2_v=0.01, init_std=0.01)
 
 fm.fit(csr, y, n_users, n_items)
 

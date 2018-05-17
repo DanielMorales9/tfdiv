@@ -1,7 +1,7 @@
 from tfdiv.graph import PointwiseGraph, BPRLFPGraph, \
     BayesianPersonalizedRankingGraph as BPRGraph, PointwiseRankingGraph
 from tfdiv.utility import sparse_repr, loss_logistic, \
-    matrix_swap_at_k
+    _matrix_swap_at_k
 from sklearn.base import BaseEstimator, ClassifierMixin
 from tfdiv.graph import PointwiseLFPGraph
 from tfdiv.dataset import PairDataset
@@ -83,13 +83,15 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
                 self._best_loss = acc_loss
 
     def save_state(self, path):
+        # TODO: implement save API
         pass
 
     def load_state(self, path):
+        # TODO: implement restore API
         pass
 
     def log_summary(self, summary, step):
-        if self.log_writer is None:
+        if self.log_writer is None and self.logging_enabled:
             self.log_writer = tf.summary.FileWriter(self.log_dir, self.graph)
         if self.logging_enabled:
             self.log_writer.add_summary(summary, step)
@@ -100,7 +102,7 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
             self.log_writer.add_graph(self.graph)
 
 
-class FMPointwise(BaseClassifier):
+class Pointwise(BaseClassifier):
 
     def __init__(self,
                  epochs=100,
@@ -114,21 +116,21 @@ class FMPointwise(BaseClassifier):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
-                 seed=1,
                  show_progress=True,
                  log_dir=None,
                  session_config=None,
                  tol=None,
                  n_iter_no_change=10,
-                 graph=PointwiseGraph):
-        super(FMPointwise, self).__init__(epochs=epochs,
-                                          batch_size=batch_size,
-                                          show_progress=show_progress,
-                                          seed=seed,
-                                          log_dir=log_dir,
-                                          session_config=session_config,
-                                          n_iter_no_change=n_iter_no_change,
-                                          tol=tol)
+                 seed=1,
+                 core=None):
+        super(Pointwise, self).__init__(epochs=epochs,
+                                        batch_size=batch_size,
+                                        show_progress=show_progress,
+                                        seed=seed,
+                                        log_dir=log_dir,
+                                        session_config=session_config,
+                                        n_iter_no_change=n_iter_no_change,
+                                        tol=tol)
         self.n_factors = n_factors
         self.shuffle_size = shuffle_size
         self.init_std = init_std
@@ -139,17 +141,15 @@ class FMPointwise(BaseClassifier):
         self.l2_w = l2_w
         self.l2_v = l2_v
 
-        assert issubclass(graph, PointwiseGraph), \
-            'Computational Graph must be a subclass of PointwiseGraph'
         # Computational graph initialization
-        self.core = graph(n_factors=self.n_factors,
-                          init_std=self.init_std,
-                          dtype=self.dtype,
-                          optimizer=self.optimizer,
-                          learning_rate=self.learning_rate,
-                          loss_function=self.loss_function,
-                          l2_v=self.l2_v,
-                          l2_w=self.l2_w)
+        self.core = core if core else PointwiseGraph(n_factors=self.n_factors,
+                                                     init_std=self.init_std,
+                                                     dtype=self.dtype,
+                                                     optimizer=self.optimizer,
+                                                     learning_rate=self.learning_rate,
+                                                     loss_function=self.loss_function,
+                                                     l2_v=self.l2_v,
+                                                     l2_w=self.l2_w)
 
     def init_computational_graph(self, it):
         if it:
@@ -241,13 +241,45 @@ class FMPointwise(BaseClassifier):
         pass
 
 
-class FMRegression(FMPointwise):
+class Regression(Pointwise):
 
     def __init__(self,
                  loss_function=tf.losses.mean_squared_error,
-                 **kwargs):
-        kwargs['loss_function'] = loss_function
-        super(FMRegression, self).__init__(**kwargs)
+                 epochs=100,
+                 batch_size=-1,
+                 shuffle_size=1000,
+                 n_factors=10,
+                 dtype=tf.float32,
+                 init_std=0.01,
+                 l2_v=0.001,
+                 l2_w=0.001,
+                 learning_rate=0.001,
+                 optimizer=tf.train.AdamOptimizer,
+                 show_progress=True,
+                 log_dir=None,
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10,
+                 seed=1,
+                 core=None):
+        super(Regression, self).__init__(epochs=epochs,
+                                         loss_function=loss_function,
+                                         shuffle_size=shuffle_size,
+                                         n_factors=n_factors,
+                                         dtype=dtype,
+                                         init_std=init_std,
+                                         l2_w=l2_w,
+                                         l2_v=l2_v,
+                                         learning_rate=learning_rate,
+                                         batch_size=batch_size,
+                                         show_progress=show_progress,
+                                         optimizer=optimizer,
+                                         seed=seed,
+                                         log_dir=log_dir,
+                                         session_config=session_config,
+                                         n_iter_no_change=n_iter_no_change,
+                                         tol=tol,
+                                         core=core)
 
     def init_input(self, x, y=None):
         if not x.has_sorted_indices:
@@ -270,15 +302,47 @@ class FMRegression(FMPointwise):
         pass
 
 
-class FMClassification(FMPointwise):
+class Classification(Pointwise):
 
     def __init__(self,
                  loss_function=loss_logistic,
                  label_transform=lambda y: y * 2 - 1,
-                 **kwargs):
-        kwargs['loss_function'] = loss_function
+                 epochs=100,
+                 batch_size=-1,
+                 shuffle_size=1000,
+                 n_factors=10,
+                 dtype=tf.float32,
+                 init_std=0.01,
+                 l2_v=0.001,
+                 l2_w=0.001,
+                 learning_rate=0.001,
+                 optimizer=tf.train.AdamOptimizer,
+                 show_progress=True,
+                 log_dir=None,
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10,
+                 seed=1,
+                 core=None):
+        super(Classification, self).__init__(epochs=epochs,
+                                             loss_function=loss_function,
+                                             shuffle_size=shuffle_size,
+                                             n_factors=n_factors,
+                                             dtype=dtype,
+                                             init_std=init_std,
+                                             l2_w=l2_w,
+                                             l2_v=l2_v,
+                                             learning_rate=learning_rate,
+                                             batch_size=batch_size,
+                                             show_progress=show_progress,
+                                             optimizer=optimizer,
+                                             seed=seed,
+                                             log_dir=log_dir,
+                                             session_config=session_config,
+                                             n_iter_no_change=n_iter_no_change,
+                                             tol=tol,
+                                             core=core)
         self.label_transform = label_transform
-        super(FMClassification, self).__init__(**kwargs)
 
     def init_input(self, x, y=None):
         if not x.has_sorted_indices:
@@ -304,13 +368,13 @@ class FMClassification(FMPointwise):
         pass
 
 
-class FMRanking(BaseClassifier):
+class Ranking(BaseClassifier):
 
     def predict(self, X, n_users, n_items, k=10):
         raise NotImplementedError
 
 
-class FMRegressionRanking(FMRanking, FMRegression):
+class RegressionRanking(Ranking, Regression):
 
     def __init__(self,
                  epochs=100,
@@ -330,41 +394,39 @@ class FMRegressionRanking(FMRanking, FMRegression):
                  session_config=None,
                  tol=None,
                  n_iter_no_change=10,
-                 graph=PointwiseRankingGraph):
-        super(FMRegressionRanking, self).__init__(epochs=epochs,
-                                                  batch_size=batch_size,
-                                                  show_progress=show_progress,
-                                                  seed=seed,
-                                                  log_dir=log_dir,
-                                                  session_config=session_config,
-                                                  n_iter_no_change=n_iter_no_change,
-                                                  tol=tol)
-        self.n_factors = n_factors
-        self.shuffle_size = shuffle_size
-        self.init_std = init_std
-        self.dtype = dtype
-        self.optimizer = optimizer
-        self.learning_rate = learning_rate
-        self.loss_function = loss_function
-        self.l2_w = l2_w
-        self.l2_v = l2_v
-        assert graph == PointwiseRankingGraph or \
-               issubclass(graph, PointwiseRankingGraph), \
-            'Computational Graph must be a subclass of PointwiseRankingGraph'
+                 core=None):
         # Computational graph initialization
-        self.core = graph(n_factors=self.n_factors,
-                          init_std=self.init_std,
-                          dtype=self.dtype,
-                          optimizer=self.optimizer,
-                          learning_rate=self.learning_rate,
-                          loss_function=self.loss_function,
-                          l2_v=self.l2_v,
-                          l2_w=self.l2_w)
+        self.core = core if core \
+            else PointwiseRankingGraph(n_factors=n_factors,
+                                       init_std=init_std,
+                                       dtype=dtype,
+                                       optimizer=optimizer,
+                                       learning_rate=learning_rate,
+                                       l2_v=l2_v,
+                                       l2_w=l2_w)
+
+        super(RegressionRanking, self).__init__(epochs=epochs,
+                                                batch_size=batch_size,
+                                                shuffle_size=shuffle_size,
+                                                n_factors=n_factors,
+                                                dtype=dtype,
+                                                init_std=init_std,
+                                                loss_function=loss_function,
+                                                l2_w=l2_w,
+                                                l2_v=l2_v,
+                                                learning_rate=learning_rate,
+                                                optimizer=optimizer,
+                                                seed=seed,
+                                                show_progress=show_progress,
+                                                log_dir=log_dir,
+                                                session_config=session_config,
+                                                n_iter_no_change=n_iter_no_change,
+                                                tol=tol, core=self.core)
 
     def predict(self, X, n_users, n_items, k=10):
         with self.graph.as_default():
             self.core.ranking_computation()
-        pred = FMRegression.predict(self, X)
+        pred = Regression.predict(self, X)
         rank_res = self.session.run(self.core.ranking_results,
                                     feed_dict={self.core.pred: pred,
                                                self.core.n_users: n_users,
@@ -373,7 +435,7 @@ class FMRegressionRanking(FMRanking, FMRegression):
         return rank_res
 
 
-class FMClassificationRanking(FMRanking, FMClassification):
+class ClassificationRanking(Ranking, Classification):
 
     def __init__(self,
                  epochs=100,
@@ -394,37 +456,36 @@ class FMClassificationRanking(FMRanking, FMClassification):
                  session_config=None,
                  tol=None,
                  n_iter_no_change=10,
-                 graph=PointwiseRankingGraph):
-        super(FMClassificationRanking, self).__init__(epochs=epochs,
-                                                      batch_size=batch_size,
-                                                      show_progress=show_progress,
-                                                      seed=seed,
-                                                      log_dir=log_dir,
-                                                      session_config=session_config,
-                                                      n_iter_no_change=n_iter_no_change,
-                                                      tol=tol)
-        self.n_factors = n_factors
-        self.shuffle_size = shuffle_size
-        self.init_std = init_std
-        self.dtype = dtype
-        self.optimizer = optimizer
-        self.learning_rate = learning_rate
-        self.loss_function = loss_function
-        self.l2_w = l2_w
-        self.l2_v = l2_v
-        self.label_transform = label_transform
-        assert graph == PointwiseRankingGraph or \
-               issubclass(graph, PointwiseRankingGraph), \
-            'Computational Graph must be a subclass of PointwiseRankingGraph'
-        # Computational graph initialization
-        self.core = graph(n_factors=self.n_factors,
-                          init_std=self.init_std,
-                          dtype=self.dtype,
-                          optimizer=self.optimizer,
-                          learning_rate=self.learning_rate,
-                          loss_function=self.loss_function,
-                          l2_v=self.l2_v,
-                          l2_w=self.l2_w)
+                 core=None):
+        self.core = core if core \
+            else PointwiseRankingGraph(n_factors=n_factors,
+                                       init_std=init_std,
+                                       dtype=dtype,
+                                       optimizer=optimizer,
+                                       learning_rate=learning_rate,
+                                       l2_v=l2_v,
+                                       l2_w=l2_w)
+
+        super(ClassificationRanking, self).__init__(epochs=epochs,
+                                                    batch_size=batch_size,
+                                                    shuffle_size=shuffle_size,
+                                                    n_factors=n_factors,
+                                                    dtype=dtype,
+                                                    init_std=init_std,
+                                                    loss_function=loss_function,
+                                                    l2_w=l2_w,
+                                                    l2_v=l2_v,
+                                                    learning_rate=learning_rate,
+                                                    optimizer=optimizer,
+                                                    seed=seed,
+                                                    show_progress=show_progress,
+                                                    log_dir=log_dir,
+                                                    label_transform=label_transform,
+                                                    session_config=session_config,
+                                                    n_iter_no_change=n_iter_no_change,
+                                                    tol=tol,
+                                                    core=self.core)
+
 
     def decision_function(self, x):
         return x
@@ -432,7 +493,7 @@ class FMClassificationRanking(FMRanking, FMClassification):
     def predict(self, X, n_users, n_items, k=10):
         with self.graph.as_default():
             self.core.ranking_computation()
-        pred = FMClassification.predict(self, X)
+        pred = Classification.predict(self, X)
         rank_res = self.session.run(self.core.ranking_results,
                                     feed_dict={self.core.pred: pred,
                                                self.core.n_users: n_users,
@@ -441,7 +502,7 @@ class FMClassificationRanking(FMRanking, FMClassification):
         return rank_res
 
 
-class FMBayesianPersonalizedRanking(FMRanking):
+class BayesianPersonalizedRanking(Ranking):
 
     def __init__(self,
                  epochs=100,
@@ -461,15 +522,16 @@ class FMBayesianPersonalizedRanking(FMRanking):
                  session_config=None,
                  tol=None,
                  n_iter_no_change=10,
-                 graph=BPRGraph):
-        super(FMBayesianPersonalizedRanking, self).__init__(epochs=epochs,
-                                                            batch_size=batch_size,
-                                                            show_progress=show_progress,
-                                                            seed=seed,
-                                                            log_dir=log_dir,
-                                                            n_iter_no_change=n_iter_no_change,
-                                                            tol=tol,
-                                                            session_config=session_config)
+                 core=None):
+        super(BayesianPersonalizedRanking, self).__init__(epochs=epochs,
+                                                          batch_size=batch_size,
+                                                          dtype=dtype,
+                                                          seed=seed,
+                                                          show_progress=show_progress,
+                                                          log_dir=log_dir,
+                                                          session_config=session_config,
+                                                          n_iter_no_change=n_iter_no_change,
+                                                          tol=tol)
         self.frac = frac
         self.bootstrap_sampling = bootstrap_sampling
         self.n_factors = n_factors
@@ -480,7 +542,8 @@ class FMBayesianPersonalizedRanking(FMRanking):
         self.l2_w = l2_w
         self.l2_v = l2_v
         # Computational graph initialization
-        self.core = graph(n_factors=n_factors,
+        self.core = core if core \
+            else BPRGraph(n_factors=n_factors,
                           init_std=init_std,
                           dtype=dtype,
                           optimizer=optimizer,
@@ -561,10 +624,27 @@ class FMBayesianPersonalizedRanking(FMRanking):
         return rank_res
 
 
-class LatentFactorPortfolio(FMRanking):
+class LatentFactorPortfolio(Ranking):
 
-    def __init__(self, **kwargs):
-        super(LatentFactorPortfolio, self).__init__(**kwargs)
+    def __init__(self,
+                 epochs=100,
+                 batch_size=-1,
+                 dtype=tf.float32,
+                 seed=1,
+                 show_progress=True,
+                 log_dir=None,
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10):
+        super(LatentFactorPortfolio, self).__init__(epochs=epochs,
+                                                    batch_size=batch_size,
+                                                    dtype=dtype,
+                                                    seed=seed,
+                                                    show_progress=show_progress,
+                                                    log_dir=log_dir,
+                                                    session_config=session_config,
+                                                    n_iter_no_change=n_iter_no_change,
+                                                    tol=tol)
 
     def fit(self, X, y, n_users, n_items):
         raise NotImplementedError
@@ -617,33 +697,59 @@ class LatentFactorPortfolio(FMRanking):
             delta_f = self.session.run(self.core.delta_f,
                                        feed_dict=parametric_feed_dict(self, pred, rank, i))
             delta_arg_max = np.argmax(delta_f, axis=1)
-            matrix_swap_at_k(delta_arg_max, k, pred)
-            matrix_swap_at_k(delta_arg_max, k, rank)
+            _matrix_swap_at_k(delta_arg_max, k, pred)
+            _matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
 
 
-class FMRegressionLFP(FMRegressionRanking, LatentFactorPortfolio):
+class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
 
-    def __init__(self, **kwargs):
-        kwargs['graph'] = PointwiseLFPGraph
-        super(FMRegressionLFP, self).__init__(**kwargs)
+    def __init__(self,
+                 epochs=100,
+                 batch_size=-1,
+                 shuffle_size=1000,
+                 n_factors=10,
+                 dtype=tf.float32,
+                 init_std=0.01,
+                 loss_function=tf.losses.mean_squared_error,
+                 l2_v=0.001,
+                 l2_w=0.001,
+                 learning_rate=0.001,
+                 optimizer=tf.train.AdamOptimizer,
+                 seed=1,
+                 show_progress=True,
+                 log_dir=None,
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10,
+                 core=None):
+        self.core = core if core \
+            else PointwiseLFPGraph(n_factors=n_factors,
+                                   init_std=init_std,
+                                   dtype=dtype,
+                                   optimizer=optimizer,
+                                   learning_rate=learning_rate,
+                                   l2_v=l2_v,
+                                   l2_w=l2_w)
 
-    def fit(self, X, y, n_users, n_items):
-        FMRegressionRanking.fit(self, X, y)
-        indices, values, shape = sparse_repr(X, self.ntype)
-        self.compute_variance(indices, values, shape, n_users)
-
-    def predict(self, X, n_users, n_items, k=10, b=0.0):
-        pred, rank = FMRegressionRanking.predict(self, X, n_users, n_items, n_items)
-        predictions = self.delta_predict(k, b, n_users, pred, rank, X)
-        return predictions
-
-
-class FMClassificationLFP(FMClassificationRanking, LatentFactorPortfolio):
-
-    def __init__(self, **kwargs):
-        kwargs['graph'] = PointwiseLFPGraph
-        super(FMClassificationLFP, self).__init__(**kwargs)
+        super(RegressionLFP, self).__init__(epochs=epochs,
+                                            batch_size=batch_size,
+                                            shuffle_size=shuffle_size,
+                                            n_factors=n_factors,
+                                            dtype=dtype,
+                                            init_std=init_std,
+                                            loss_function=loss_function,
+                                            l2_w=l2_w,
+                                            l2_v=l2_v,
+                                            learning_rate=learning_rate,
+                                            optimizer=optimizer,
+                                            seed=seed,
+                                            show_progress=show_progress,
+                                            log_dir=log_dir,
+                                            session_config=session_config,
+                                            n_iter_no_change=n_iter_no_change,
+                                            tol=tol,
+                                            core=self.core)
 
     def delta_predict(self, k, b, n_users, pred, rank, X):
         with self.graph.as_default():
@@ -674,69 +780,170 @@ class FMClassificationLFP(FMClassificationRanking, LatentFactorPortfolio):
             delta_f = self.session.run(self.core.delta_f,
                                        feed_dict=parametric_feed_dict(self, pred, rank, i))
             delta_arg_max = np.argmax(delta_f, axis=1)
-            matrix_swap_at_k(delta_arg_max, k, pred)
-            matrix_swap_at_k(delta_arg_max, k, rank)
+            _matrix_swap_at_k(delta_arg_max, k, pred)
+            _matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
 
     def fit(self, X, y, n_users, n_items):
-        FMClassificationRanking.fit(self, X, y)
+        RegressionRanking.fit(self, X, y)
         indices, values, shape = sparse_repr(X, self.ntype)
         self.compute_variance(indices, values, shape, n_users)
 
     def predict(self, X, n_users, n_items, k=10, b=0.0):
-        pred, rank = FMClassificationRanking\
+        pred, rank = RegressionRanking.predict(self, X, n_users, n_items, n_items)
+        predictions = self.delta_predict(k, b, n_users, pred, rank, X)
+        return predictions
+
+
+class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
+
+    def __init__(self,
+                 epochs=100,
+                 batch_size=-1,
+                 shuffle_size=1000,
+                 n_factors=10,
+                 dtype=tf.float32,
+                 init_std=0.01,
+                 loss_function=tf.losses.mean_squared_error,
+                 l2_v=0.001,
+                 l2_w=0.001,
+                 learning_rate=0.001,
+                 optimizer=tf.train.AdamOptimizer,
+                 seed=1,
+                 show_progress=True,
+                 log_dir=None,
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10,
+                 core=None):
+        self.core = core if core \
+            else PointwiseRankingGraph(n_factors=n_factors,
+                                       init_std=init_std,
+                                       dtype=dtype,
+                                       optimizer=optimizer,
+                                       learning_rate=learning_rate,
+                                       l2_v=l2_v,
+                                       l2_w=l2_w)
+        super(ClassificationLFP, self).__init__(epochs=epochs,
+                                                batch_size=batch_size,
+                                                shuffle_size=shuffle_size,
+                                                n_factors=n_factors,
+                                                dtype=dtype,
+                                                init_std=init_std,
+                                                loss_function=loss_function,
+                                                l2_w=l2_w,
+                                                l2_v=l2_v,
+                                                learning_rate=learning_rate,
+                                                optimizer=optimizer,
+                                                seed=seed,
+                                                show_progress=show_progress,
+                                                log_dir=log_dir,
+                                                session_config=session_config,
+                                                n_iter_no_change=n_iter_no_change,
+                                                tol=tol,
+                                                core=self.core)
+
+    def delta_predict(self, k, b, n_users, pred, rank, X):
+        with self.graph.as_default():
+            with tf.name_scope(name='delta_f_computation'):
+                self.core.delta_f_computation()
+            with tf.name_scope(name='dataset'):
+                y = tf.convert_to_tensor(np.empty(X.shape[0], dtype=self.ntype))
+                x = tf.SparseTensor(*sparse_repr(X, self.ntype))
+                dataset = tf.data.Dataset.from_tensors((x, y))
+                delta_iterator = dataset.make_initializable_iterator()
+
+        handle = self.session.run(delta_iterator.string_handle())
+
+        def parametric_feed_dict(this, pred, rank, i):
+            return {
+                this.core.predictions: pred,
+                this.core.rankings: rank,
+                this.core.k: i,
+                this.core.b: b,
+                this.core.n_users: n_users,
+                this.handle: handle
+            }
+
+        for i in tqdm(range(1, k),
+                      unit='k',
+                      disable=not self.show_progress):
+            self.session.run(delta_iterator.initializer)
+            delta_f = self.session.run(self.core.delta_f,
+                                       feed_dict=parametric_feed_dict(self, pred, rank, i))
+            delta_arg_max = np.argmax(delta_f, axis=1)
+            _matrix_swap_at_k(delta_arg_max, k, pred)
+            _matrix_swap_at_k(delta_arg_max, k, rank)
+        return rank[:, :k]
+
+    def fit(self, X, y, n_users, n_items):
+        ClassificationRanking.fit(self, X, y)
+        indices, values, shape = sparse_repr(X, self.ntype)
+        self.compute_variance(indices, values, shape, n_users)
+
+    def predict(self, X, n_users, n_items, k=10, b=0.0):
+        pred, rank = ClassificationRanking \
             .predict(self, X, n_users, n_items, n_items)
         predictions = self.delta_predict(k, b, n_users, pred, rank, X)
         return predictions
 
 
-class FMBayesianPersonalizedRankingLFP(FMBayesianPersonalizedRanking, LatentFactorPortfolio):
+class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPortfolio):
 
-    def __init__(self, **kwargs):
-        kwargs['graph'] = BPRLFPGraph
-        super(FMBayesianPersonalizedRankingLFP, self).__init__(**kwargs)
+    def __init__(self,
+                 epochs=100,
+                 batch_size=-1,
+                 n_factors=10,
+                 dtype=tf.float32,
+                 init_std=0.01,
+                 l2_v=0.001,
+                 l2_w=0.001,
+                 learning_rate=0.001,
+                 optimizer=tf.train.AdamOptimizer,
+                 seed=1,
+                 frac=0.5,
+                 show_progress=True,
+                 bootstrap_sampling='uniform_user',
+                 log_dir=None,
+                 session_config=None,
+                 tol=None,
+                 n_iter_no_change=10,
+                 core=None):
 
-    def delta_predict(self, k, b, n_users, pred, rank, X):
-        with self.graph.as_default():
-            with tf.name_scope(name='delta_f_computation'):
-                self.core.delta_f_computation()
-            with tf.name_scope(name='dataset'):
-                y = tf.convert_to_tensor(np.empty(X.shape[0], dtype=self.ntype))
-                x = tf.SparseTensor(*sparse_repr(X, self.ntype))
-                dataset = tf.data.Dataset.from_tensors((x, y))
-                delta_iterator = dataset.make_initializable_iterator()
+        self.core = core if core else BPRLFPGraph(n_factors=self.n_factors,
+                                                  init_std=self.init_std,
+                                                  dtype=self.dtype,
+                                                  optimizer=self.optimizer,
+                                                  learning_rate=self.learning_rate,
+                                                  l2_v=self.l2_v,
+                                                  l2_w=self.l2_w)
 
-        handle = self.session.run(delta_iterator.string_handle())
-
-        def parametric_feed_dict(this, pred, rank, i):
-            return {
-                this.core.predictions: pred,
-                this.core.rankings: rank,
-                this.core.k: i,
-                this.core.b: b,
-                this.core.n_users: n_users,
-                this.handle: handle
-            }
-
-        for i in tqdm(range(1, k),
-                      unit='k',
-                      disable=not self.show_progress):
-            self.session.run(delta_iterator.initializer)
-            delta_f = self.session.run(self.core.delta_f,
-                                       feed_dict=parametric_feed_dict(self, pred, rank, i))
-            delta_arg_max = np.argmax(delta_f, axis=1)
-            matrix_swap_at_k(delta_arg_max, k, pred)
-            matrix_swap_at_k(delta_arg_max, k, rank)
-        return rank[:, :k]
-
+        super(BayesianPersonalizedRankingLFP, self).__init__(epochs=epochs,
+                                                             batch_size=batch_size,
+                                                             frac=frac,
+                                                             bootstrap_sampling=bootstrap_sampling,
+                                                             n_factors=n_factors,
+                                                             dtype=dtype,
+                                                             init_std=init_std,
+                                                             l2_w=l2_w,
+                                                             l2_v=l2_v,
+                                                             learning_rate=learning_rate,
+                                                             optimizer=optimizer,
+                                                             seed=seed,
+                                                             show_progress=show_progress,
+                                                             log_dir=log_dir,
+                                                             session_config=session_config,
+                                                             n_iter_no_change=n_iter_no_change,
+                                                             tol=tol,
+                                                             core=self.core)
 
     def fit(self, X, y, n_users, n_items):
-        FMBayesianPersonalizedRanking.fit(self, X, y)
+        BayesianPersonalizedRanking.fit(self, X, y)
         del y
         indices, values, shape = self.unique_sparse_input(X, n_users, n_items)
         self.compute_variance(indices, values, shape, n_users)
 
     def predict(self, X, n_users, n_items, k=10, b=0.0):
-        pred, rank = FMBayesianPersonalizedRanking.predict(self, X, n_users, n_items, n_items)
+        pred, rank = BayesianPersonalizedRanking.predict(self, X, n_users, n_items, n_items)
         predictions = self.delta_predict(k, b, n_users, pred, rank, X)
         return predictions

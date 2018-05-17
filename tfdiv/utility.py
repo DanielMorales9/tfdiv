@@ -1,6 +1,9 @@
-import numpy as np
-import pandas as pd
+from scipy.sparse import isspmatrix_csr, csr_matrix, bmat
+from collections import defaultdict
+from itertools import count
 import tensorflow as tf
+import pandas as pd
+import numpy as np
 
 
 def sparse_repr(x, ntype):
@@ -17,35 +20,85 @@ def cartesian_product(x, y):
     return np.transpose([np.repeat(x, len(y)), np.tile(y, len(x))])
 
 
-def matrix_swap_at_k(index, k, matrix):
+def _matrix_swap_at_k(index, k, matrix):
     for r, c in enumerate(index):
         temp = matrix[r, c + k]
         matrix[r, c + k] = matrix[r, k]
         matrix[r, k] = temp
 
 
-def unique_sparse_matrix(pos):
-    def hash_csr(x):
-        n_rows = x.shape[0]
-        indices = x.indices
-        indptr = x.indptr
-        data = x.data
-        size = 0
-        for i in range(n_rows):
-            size = max(indices[indptr[i]:indptr[i + 1]].shape[0], size)
-        hashed_rows = np.zeros((n_rows, 2), dtype=('S' + str(size * 2 + 4)))
-        for i in range(n_rows):
-            cols = indices[indptr[i]:indptr[i + 1]]
-            dat = data[indptr[i]:indptr[i + 1]]
-            hashed_rows[i, 0] = cols.tobytes()
-            hashed_rows[i, 1] = dat.tobytes()
-        return hashed_rows
+def csr_unique_min_cols(X):
+    cols = []
+    for i in range(X.shape[0]):
+        cols.append(min(X.indices[X.indptr[i]:X.indptr[i + 1]]))
+    cols = np.unique(cols)
+    return cols
 
-    hashed_rows = hash_csr(pos)
-    _, row_indices = np.unique(hashed_rows, axis=0,
-                               return_index=True)
-    x = pos[row_indices]
-    return x
+
+def ranked_relevance_feedback(rank, rel_feed):
+    rs = np.empty(rank.shape)
+    for i, (re, ra) in enumerate(zip(rel_feed, rank)):
+        rs[i, :] = re[ra]
+    return rs
+
+
+def csr_cartesian_product(users, items):
+    n_items, n_features = items.shape
+    n_users = users.shape[0]
+    n_cartesian = n_items * n_users
+    data = np.ones(n_cartesian)
+    rows = np.arange(n_cartesian)
+    cols = users.repeat(n_items)
+    users = csr_matrix((data, (rows, cols)), shape=(n_cartesian, n_features))
+    sp = []
+    for _ in range(n_users):
+        sp.append(items)
+    items = bmat(np.array(sp).reshape(-1, 1))
+    new_x = items + users
+    return new_x
+
+
+def relevance_feedback(n_users, n_items, item_map, X):
+    assert isspmatrix_csr(X), 'X must be of class scipy.sparse.csr_matrix'
+    ui = []
+    for i in np.arange(X.shape[0]):
+        ui.append(X.indices[X.indptr[i]:X.indptr[i + 1]][:2])
+    ui = np.unique(ui, axis=1)
+
+    c = count(0)
+    user_dict = defaultdict(c.__next__)
+    for i, el in enumerate(ui):
+        ui[i, 0] = user_dict[el[0]]
+        ui[i, 1] = item_map[el[1]]
+
+    rel = np.zeros((n_users, n_items), dtype=np.int32)
+    rel[ui[:, 0], ui[:, 1]] = 1
+
+    return rel
+
+
+# def unique_sparse_matrix(pos):
+#     def hash_csr(x):
+#         n_rows = x.shape[0]
+#         indices = x.indices
+#         indptr = x.indptr
+#         data = x.data
+#         size = 0
+#         for i in range(n_rows):
+#             size = max(indices[indptr[i]:indptr[i + 1]].shape[0], size)
+#         hashed_rows = np.zeros((n_rows, 2), dtype=('S' + str(size * 2 + 4)))
+#         for i in range(n_rows):
+#             cols = indices[indptr[i]:indptr[i + 1]]
+#             dat = data[indptr[i]:indptr[i + 1]]
+#             hashed_rows[i, 0] = cols.tobytes()
+#             hashed_rows[i, 1] = dat.tobytes()
+#         return hashed_rows
+#
+#     hashed_rows = hash_csr(pos)
+#     _, row_indices = np.unique(hashed_rows, axis=0,
+#                                return_index=True)
+#     x = pos[row_indices]
+#     return x
 
 
 # ---- Tensorflow utility ----

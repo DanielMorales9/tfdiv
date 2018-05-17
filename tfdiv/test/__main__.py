@@ -1,16 +1,19 @@
 from ..graph import PointwiseGraph, \
     PointwiseLFPGraph as PointLFP, \
     BPRLFPGraph
-from ..fm import FMRegression
-from sklearn.preprocessing import OneHotEncoder
 from tfdiv.utility import sparse_repr
+from sklearn.preprocessing import OneHotEncoder
 from unittest.case import TestCase
 import tensorflow as tf
 import numpy as np
 import unittest
 
+# TODO: Test Classifiers
+# TODO: Test Ranking classes
+# TODO: Test Latent Factor Portfolio
 
-# ---- Computational Graph Tests ----
+
+# ---- Computational Graphs Tests ----
 class TestPointwiseGraph(TestCase):
 
     def setUp(self):
@@ -928,8 +931,6 @@ class TestBayesianLFPGraph(TestCase):
         dense_shape = np.array([2, 2], dtype=np.int64)
         n_features = 2
 
-        y = np.array([1, 1], dtype=np.float32)
-
         self.bias = tf.verify_tensor_all_finite(
             tf.Variable(0.0,
                         trainable=True,
@@ -1328,7 +1329,6 @@ class TestBayesianLFPGraph(TestCase):
         self.assertTrue(np.all(user_var == expected_user_var))
 
     def test_ranking_coefficient(self):
-        n_features = 5
         # cartesian product of users and items
         x = np.array([[100, 200],
                       [100, 201],

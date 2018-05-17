@@ -1,5 +1,5 @@
 from sklearn.preprocessing import OneHotEncoder
-from tfdiv.fm import FMBayesianPersonalizedRanking
+from tfdiv.fm import BayesianPersonalizedRanking
 from tfdiv.utility import cartesian_product
 import pandas as pd
 import numpy as np
@@ -50,11 +50,11 @@ epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
 k = int(sys.argv[3])
 
-fm = FMBayesianPersonalizedRanking(epochs=epochs,
-                                   bootstrap_sampling='uniform_user',
-                                   log_dir="../logs/bpr-"+str(epochs)+"_size-"+str(batch_size),
-                                   batch_size=batch_size, tol=1e-4, frac=0.7,
-                                   l2_w=0.01, l2_v=0.01, init_std=0.01)
+fm = BayesianPersonalizedRanking(epochs=epochs,
+                                 bootstrap_sampling='uniform_user',
+                                 log_dir="../logs/bpr-"+str(epochs)+"_size-"+str(batch_size),
+                                 batch_size=batch_size, tol=1e-4, frac=0.7,
+                                 l2_w=0.01, l2_v=0.01, init_std=0.01)
 fm.fit(pos, neg)
 
 x = enc.transform(cartesian_product(train.user.unique(), train.item.unique()))

@@ -1,5 +1,5 @@
 from sklearn.preprocessing import OneHotEncoder
-from tfdiv.fm import FMClassification
+from tfdiv.fm import Classification
 import pandas as pd
 import numpy as np
 from sklearn.metrics import accuracy_score
@@ -27,10 +27,10 @@ csr.sort_indices()
 epochs = int(sys.argv[1])
 batch_size = int(sys.argv[2])
 
-fm = FMClassification(epochs=epochs,
-                      log_dir="../logs/classifier-"+str(epochs)+"_size-"+str(batch_size),
-                      batch_size=batch_size, tol=1e-10,
-                      l2_w=0, l2_v=0, init_std=0.01)
+fm = Classification(epochs=epochs,
+                    log_dir="../logs/classifier-"+str(epochs)+"_size-"+str(batch_size),
+                    batch_size=batch_size, tol=1e-10,
+                    l2_w=0, l2_v=0, init_std=0.01)
 
 fm.fit(csr, y)
 
