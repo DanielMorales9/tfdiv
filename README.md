@@ -49,12 +49,13 @@ However, this introduces a large number of `w2` variables. Specifically, there a
 </p>
 
 where each `v_i` is a low-dimensional vector. This is the forward pass of a second order factorization machine. This low-rank re-formulation has reduced the number of additional parameters for the factorization machine to `O(k*n)`. Magically, the forward (and backward) pass can be reformulated so that it can be computed in `O(k*n)`, rather than the naive `O(k*n^2)` formulation above.
---->
+
 
 ## Usage
 
 The factorization machine layers in can be used just like any other built-in module. Here's a simple feed-forward model using a factorization machine that takes in a 50-D input, and models interactions using `k=5` factors.
 See demo for fuller examples.
+--->
 
 ## Installation
 
