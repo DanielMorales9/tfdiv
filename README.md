@@ -1,6 +1,6 @@
 # tfdiv
 
-A library for factorization machines in [TensorFlow](https://www.tensorflow.org/).
+A library for factorization machines in [TensorFlow](https://www.tensorflow.org/).  
 The library provides standard ***Classifier*** and ***Regression*** modules,
 that can be extended by defining a custom `loss_function`. 
 It also provides a **Ranking** module for both classifiers and regressions.
@@ -22,7 +22,7 @@ with many other factorization models like Matrix Factorization.
 In contrast to those, FMs can handle the general prediction tasks 
 whereas other factorization models work with specific input data. 
 
-![dataset](https://github.com/DanielMorales9/tfdiv/images/real-valued-feature-vectors.jpg "Real-Valued Feature Vectors")
+![dataset](./images/real-valued-feature-vectors.jpg "Real-Valued Feature Vectors")
 
 
 <!---
