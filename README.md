@@ -1,10 +1,10 @@
 # tfdiv
 
 A library for factorization machines in [TensorFlow](https://www.tensorflow.org/).  
-The library provides standard ***Classifier*** and ***Regression*** modules,
+The library provides standard *Classifier* and *Regression* modules,
 that can be extended by defining a custom `loss_function`.  
-It also provides a **Ranking** module for several classifiers.
-We also provide the **Bayesian Personalized Ranking** **[2]**,
+It also provides a *Ranking* module for several classifiers.
+We also provide the *Bayesian Personalized Ranking* **[2]**,
 which is a pairwise learning-to-rank algorithm.
 
 ### What are Factorization Machines?
@@ -25,32 +25,37 @@ whereas other factorization models work with specific input data.
 ![dataset](./images/real-valued-feature-vectors.jpg "Real-Valued Feature Vectors")
 
 
-<!---
-
 #### FMs' Model Equation
- A linear model, given a vector `x` models its output `y` as
+In a linear model, given a vector `x` models its predicted output `y` is as follows:
 
-<p>
-<a href="url"><img src="https://raw.githubusercontent.com/jmhessel/fmpytorch/master/images/linear_model.png" width="250" align="center"></a>
-</p>
+![linear](http://latex.codecogs.com/gif.latex?%5Chat%7By%7D%20%28x%29%20%3A%3D%20w_0%20&plus;%20%5Csum_%7Bi%20%3D%201%7D%5En%20w_i%20x_i)  
 
-where `w` are the learnable weights of the model.
+where `w` are the estimated weights of the model.  
+Here, the interactions between the input variables `x_i` 
+are purely additive, whereas it might be useful to 
+model the interactions between your variables, e.g., `x_i * x_j`.
+Thus, such model class has additional parameters to estimate 
+the interactions between variables, 
+i.e. `V` whose dimension depends on th order of interactions.   
+Therefore, the equation for a model that captures the pairwise interaction between variables looks like as follows.  
 
-However, the interactions between the input variables `x_i` are purely additive. In some cases, it might be useful to model the interactions between your variables, e.g., `x_i * x_j`. You could add terms into your model like
+![equation](http://latex.codecogs.com/gif.latex?%5Chat%7By%7D%20%28%5Cmathbf%7Bx%7D%29%20%3A%3D%20w_0%20&plus;%20%5Csum_%7Bj%20%3D%201%7D%5En%20w_j%20x_j%20&plus;%20%5Csum_%7Bi%20%3D%201%7D%5En%20%5Csum_%7Bj%20%3D%20i&plus;1%7D%5En%20v_%7Bij%7D%7E%20x_i%20x_j)
+
+However, in this formulation the number of parameters 
+grows exponentially with the number of features in the feature vector, 
+e.g. in the second order interaction model there are `O(n^2)` parameters introduced. 
+
+Rendle mathematically demonstrated that factorization machine 
+can reduce the number of parameters to estimate by factorizing them.
+Thus, he reduced both memory and time complexity to `O(k*n)`, 
+i.e. linear complexity rather than polynomial.  
+
+Which translates to the following 2-way model equation:   
+  
+![equation](http://latex.codecogs.com/gif.latex?%5Chat%7By%7D%20%28%5Cmathbf%7Bx%7D%29%20%3A%3D%20w_0%20&plus;%20%5Csum_%7Bj%20%3D%201%7D%5En%20w_j%20x_j%20&plus;%20%5Csum_%7Bi%20%3D%201%7D%5En%20%5Csum_%7Bj%20%3D%20i&plus;1%7D%5En%20%5Cleft%20%5Clangle%20v_i%2C%20v_j%20%5Cright%20%5Crangle%20x_i%20x_j)
 
 
-<p>
-<a href="url"><img src="https://raw.githubusercontent.com/jmhessel/fmpytorch/master/images/second_order.png" width="400" align="center"></a>
-</p>
-
-However, this introduces a large number of `w2` variables. Specifically, there are `O(n^2)` parameters introduced in this formulation, one for each interaction pair. A factorization machine approximates `w2` using low dimensional factors, i.e.,
-<p>
-<a href="url"><img src="https://raw.githubusercontent.com/jmhessel/fmpytorch/master/images/fm.png" width="400" align="center"></a>
-</p>
-
-where each `v_i` is a low-dimensional vector. This is the forward pass of a second order factorization machine. This low-rank re-formulation has reduced the number of additional parameters for the factorization machine to `O(k*n)`. Magically, the forward (and backward) pass can be reformulated so that it can be computed in `O(k*n)`, rather than the naive `O(k*n^2)` formulation above.
-
-
+<!---
 ## Usage
 
 The factorization machine layers in can be used just like any other built-in module. Here's a simple feed-forward model using a factorization machine that takes in a 50-D input, and models interactions using `k=5` factors.
