@@ -2,14 +2,14 @@
 
 A library for factorization machines in [TensorFlow](https://www.tensorflow.org/).  
 The library provides standard ***Classifier*** and ***Regression*** modules,
-that can be extended by defining a custom `loss_function`. 
-It also provides a **Ranking** module for both classifiers and regressions.
+that can be extended by defining a custom `loss_function`.  
+It also provides a **Ranking** module for several classifiers.
 We also provide the **Bayesian Personalized Ranking** **[2]**,
 which is a pairwise learning-to-rank algorithm.
 
 ### What are Factorization Machines?
 
-Factorization Machines (FMs) are a new model class devised by S. Rendle **[1]**, 
+Factorization Machines (FMs) are a new model class devised by S. Rendle **[1]**.    
 Similarly to Support Vector Machines (SVM), 
 they are a general predictor working with any 
 real-valued feature vector. However, FMs model all
