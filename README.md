@@ -49,7 +49,6 @@ Rendle mathematically demonstrated that factorization machine
 can reduce the number of parameters to estimate by factorizing them.
 Thus, he reduced both memory and time complexity to `O(k*n)`, 
 i.e. linear complexity rather than polynomial.  
-
 Which translates to the following 2-way model equation:   
   
 ![equation](http://latex.codecogs.com/gif.latex?%5Chat%7By%7D%20%28%5Cmathbf%7Bx%7D%29%20%3A%3D%20w_0%20&plus;%20%5Csum_%7Bj%20%3D%201%7D%5En%20w_j%20x_j%20&plus;%20%5Csum_%7Bi%20%3D%201%7D%5En%20%5Csum_%7Bj%20%3D%20i&plus;1%7D%5En%20%5Cleft%20%5Clangle%20v_i%2C%20v_j%20%5Cright%20%5Crangle%20x_i%20x_j)
