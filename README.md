@@ -1,11 +1,12 @@
 # tfdiv
 
-A library for factorization machines in [TensorFlow](https://www.tensorflow.org/).  
+The following is a library for Factorization Machines in [TensorFlow](https://www.tensorflow.org/).  
 The library provides standard *Classifier* and *Regression* modules,
 that can be extended by defining a custom `loss_function`.  
-It also provides a *Ranking* module for several classifiers.
-We also provide the *Bayesian Personalized Ranking* **[2]**,
-which is a pairwise learning-to-rank algorithm.
+It also provides a *Ranking* module for several classifiers. 
+We implemented both pointwise and pairwise learning-to-rank, 
+in particular we also provide the 
+*Bayesian Personalized Ranking* **[2]**.
 
 ### What are Factorization Machines?
 
@@ -45,21 +46,65 @@ However, in this formulation the number of parameters
 grows exponentially with the number of features in the feature vector, 
 e.g. in the second order interaction model there are `O(n^2)` parameters introduced. 
 
-Rendle mathematically demonstrated that factorization machine 
-can reduce the number of parameters to estimate by factorizing them.
-Thus, he reduced both memory and time complexity to `O(k*n)`, 
-i.e. linear complexity rather than polynomial.  
-Which translates to the following 2-way model equation:   
-  
+Rendle mathematically demonstrated that FMs 
+can reduce the number of parameters to estimate by factorizing them, as follows:
+
 ![equation](http://latex.codecogs.com/gif.latex?%5Chat%7By%7D%20%28%5Cmathbf%7Bx%7D%29%20%3A%3D%20w_0%20&plus;%20%5Csum_%7Bj%20%3D%201%7D%5En%20w_j%20x_j%20&plus;%20%5Csum_%7Bi%20%3D%201%7D%5En%20%5Csum_%7Bj%20%3D%20i&plus;1%7D%5En%20%5Cleft%20%5Clangle%20v_i%2C%20v_j%20%5Cright%20%5Crangle%20x_i%20x_j)
+ 
+Rendle managed to reduced both memory and time complexity to `O(k*n)` 
+(i.e. linear complexity), where `k` is the number of factors.   
+Therefore, the above-mentioned formulation translates 
+to the following 2-way FM:
 
+![equation](http://latex.codecogs.com/gif.latex?%5Chat%7By%7D%20%28x%29%20%3A%3D%20w_0%20&plus;%20%5Csum_%7Bj%20%3D%201%7D%5En%20w_j%20x_j%20&plus;%20%5Cfrac%7B1%7D%7B2%7D%20%5Csum_%7Bf%3D1%7D%5Ek%20%5Cleft%28%20%5Cleft%28%20%5Csum_%7Bj%3D1%7D%5En%20v_%7Bj%2Cf%7D%20x_j%20%5Cright%29%5E2%20-%20%5Csum_%7Bj%3D1%7D%5En%20v_%7Bj%2Cf%7D%5E2%20x_j%5E2%5Cright%29)
 
-<!---
+Rendle also generalized to the d-way FM, 
+but we do not discuss it as it is not yet 
+implemented in this library see [Currently supported features](#Currently-supported-features) Section. 
+
 ## Usage
 
-The factorization machine layers in can be used just like any other built-in module. Here's a simple feed-forward model using a factorization machine that takes in a 50-D input, and models interactions using `k=5` factors.
-See demo for fuller examples.
---->
+Factorization Machine classifiers implement 
+```scikit-learn```'s classifier interface, thus ```tfdiv``` 
+is compatible with any ```scikit-learn``` tool.  
+```tfdiv``` takes as input 
+```scipy.sparse.csr_matrix``` to train and predict its classifiers.   
+Below we show a demo on how to use the ```tfdiv``` library, 
+in particular we show how to customize the ```Regression``` classifier 
+by passing a ```tensorflow``` compatible ```loss_function```.
+
+```python
+from sklearn.preprocessing import OneHotEncoder
+from tfdiv.fm import Regression
+from tensorflow.metrics import mean_absolute_error
+import pandas as pd
+import numpy as np
+
+# movielens 100k dataset
+PATH = "/data/ua.base"
+header = ['user', 'item', 'rating', 'timestamp']
+
+train = pd.read_csv(PATH, delimiter='\t', names=header)[header[:-1]]
+
+enc = OneHotEncoder(categorical_features=[0, 1], dtype=np.float32)
+
+x = train.values[:, :-1]
+y = train.values[:, -1]
+
+csr = enc.fit(x).transform(x)
+
+epochs = 10
+batch_size = 32
+
+fm = Regression(epochs=epochs, 
+                batch_size=batch_size,
+                loss_function=mean_absolute_error)
+                
+fm.fit(csr, y)
+
+y_hat = fm.predict(csr)
+
+```
 
 ## Installation
 
@@ -72,24 +117,18 @@ cd tfdiv
 python setup.py install
 ```
 
-<!---
-
 ## Currently supported features
 
-Currently, only a second order factorization machine is supported. The
-forward and backward passes are implemented in cython. Compared to the
-autodiff solution, the cython passes run several orders of magnitude
-faster. I've only tested it with python 2 at the moment.
+Currently, only a second order factorization machine 
+is supported and its implemented in its sparse version only. 
 
-## TODOs
 
-0. Support for sparse tensors.
-1. More interesting useage examples
-2. More testing, e.g., with python 3, etc.
-3. Make sure all of the code plays nice with torch-specific stuff, e.g., GPUs
-4. Arbitrary order factorization machine support
-5. Better organization/code cleaning
---->
+### TODO
+
+1. Support for dense tensors.
+2. Arbitrary order factorization machine support
+3. Implement save and restore API.
+4. Generalizing Pairwise Learning-to-Ranking to enable customization
 
 ## References 
 
