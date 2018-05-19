@@ -13,7 +13,30 @@ import warnings
 
 
 class BaseClassifier(BaseEstimator, ClassifierMixin):
+    """
+    Abstract Base Classifier implements sklearn.base.BaseEstimator
 
+    Parameters
+    ------
+    epochs: int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size: int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    dtype: `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    seed: int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress: bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir: string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    """
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
@@ -103,7 +126,50 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
 
 
 class Pointwise(BaseClassifier):
+    """
+    Abstract Pointwise Classifier BaseClassifier
 
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    shuffle_size : int, optional (Default 1000)
+        A tensorflow's necessary parameter to enable shuffling on
+        its dataset.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    loss_function : tf.losses, tensorflow function, optional (Default tf.losses.mean_squared_error).
+        The loss function to minimize while training.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+    """
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
@@ -243,6 +309,51 @@ class Pointwise(BaseClassifier):
 
 class Regression(Pointwise):
 
+    """
+    Regression Module
+
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    shuffle_size : int, optional (Default 1000)
+        A tensorflow's necessary parameter to enable shuffling on
+        its dataset.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    loss_function : ``tf.losses``, tensorflow function, optional (Default tf.losses.mean_squared_error).
+        The loss function to minimize while training.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+    """
+
     def __init__(self,
                  loss_function=tf.losses.mean_squared_error,
                  epochs=100,
@@ -303,6 +414,53 @@ class Regression(Pointwise):
 
 
 class Classification(Pointwise):
+    """
+    Binary Classification Module
+
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    label_transform: function, optional
+        Function that transforms y labels to a value interval
+        that better suits the passed loss_function.
+    shuffle_size : int, optional (Default 1000)
+        A tensorflow's necessary parameter to enable shuffling on
+        its dataset.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    loss_function : ``tf.losses``, tensorflow function, optional (Default ``tfdiv.utility.loss_logistic``).
+        The loss function to minimize while training.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+        """
 
     def __init__(self,
                  loss_function=loss_logistic,
@@ -370,11 +528,59 @@ class Classification(Pointwise):
 
 class Ranking(BaseClassifier):
 
+    """
+    Abstract Ranking Module.
+    """
+
     def predict(self, X, n_users, n_items, k=10):
         raise NotImplementedError
 
 
 class RegressionRanking(Ranking, Regression):
+    """
+    Pointwise Ranking Module implemented with a regression classifier
+
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    shuffle_size : int, optional (Default 1000)
+        A tensorflow's necessary parameter to enable shuffling on
+        its dataset.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    loss_function : ``tf.losses``, tensorflow function, optional (Default tf.losses.mean_squared_error).
+        The loss function to minimize while training.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+    """
 
     def __init__(self,
                  epochs=100,
@@ -436,6 +642,50 @@ class RegressionRanking(Ranking, Regression):
 
 
 class ClassificationRanking(Ranking, Classification):
+    """
+    Pointwise Ranking Module implemented as a Classification classifier
+
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    shuffle_size : int, optional (Default 1000)
+        A tensorflow's necessary parameter to enable shuffling on
+        its dataset.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    loss_function : ``tf.losses``, tensorflow function, optional (Default tf.losses.mean_squared_error).
+        The loss function to minimize while training.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+    """
 
     def __init__(self,
                  epochs=100,
@@ -503,6 +753,45 @@ class ClassificationRanking(Ranking, Classification):
 
 
 class BayesianPersonalizedRanking(Ranking):
+    """
+    Bayesian Personalized Ranking a Pairwise Learning-to-Rank solution.
+
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+    """
 
     def __init__(self,
                  epochs=100,
@@ -625,6 +914,30 @@ class BayesianPersonalizedRanking(Ranking):
 
 
 class LatentFactorPortfolio(Ranking):
+    """
+    Abstract Latent Factor Portfolio Class.
+
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    """
 
     def __init__(self,
                  epochs=100,
@@ -703,6 +1016,50 @@ class LatentFactorPortfolio(Ranking):
 
 
 class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
+    """
+    Regression version of the Latent Factor Portfolio (LFP)
+
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    shuffle_size : int, optional (Default 1000)
+        A tensorflow's necessary parameter to enable shuffling on
+        its dataset.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    loss_function : ``tf.losses``, tensorflow function, optional (Default tf.losses.mean_squared_error).
+        The loss function to minimize while training.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+    """
 
     def __init__(self,
                  epochs=100,
@@ -796,7 +1153,50 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
 
 
 class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
+    """
+    Classification version of the Latent Factor Portfolio (LFP)
 
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    shuffle_size : int, optional (Default 1000)
+        A tensorflow's necessary parameter to enable shuffling on
+        its dataset.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    loss_function : ``tf.losses``, tensorflow function, optional (Default tf.losses.mean_squared_error).
+        The loss function to minimize while training.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+    """
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
@@ -889,6 +1289,45 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
 
 
 class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPortfolio):
+    """
+    Bayesian Personalized Ranking version of the Latent Factor Portfolio (LFP)
+
+    Parameters
+    ------
+    epochs : int, optional
+        number of training cycles to perform in order to fit classifier
+        Default 100 epochs
+    batch_size : int, optional (Default -1)
+        Batch size to use while training classifier.
+        -1 means no batch_size to use.
+    n_factors : int, optional (Default 10)
+        the number of factors used to factorize
+        pairwise interactions between variables.
+    dtype : `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    init_std : float, optional (Default 0.01)
+        The standard deviation with which initialize model parameters.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    seed : int, optional (Default 1).
+        Seed integer for `tf.Graph`.
+    show_progress : bool, optional (Default True).
+        Enables progress bar during fitting.
+    log_dir : string, optional (Default None)
+        Tensorflow logging directory.
+    tol : float, optional (Default None)
+        Tolerance for stopping criteria.
+    n_iter_no_change : int, optional (Default 10)
+        Maximum number of epochs to not meet ``tol`` improvement.
+    core : ``tfdiv.graph``, optional (Default None)
+        Computational Graph
+    """
 
     def __init__(self,
                  epochs=100,
