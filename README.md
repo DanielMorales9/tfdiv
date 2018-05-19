@@ -123,6 +123,20 @@ python setup.py install
 Currently, only a second order factorization machine 
 is supported and its implemented in its sparse version. 
 
+The following classifiers are implemented: 
+* Classifier
+* Regression
+* Ranking
+  * Pointwise Learning-to-Rank
+    * Classifier and Regression 
+  * Pairwise Learning-to-Rank
+    * Bayesian Personalized Ranking
+
+* Latent Portfolio Factor
+  * Pointwise Ranking
+    * Classifier and Regression
+  - Pairwise Ranking
+    * Bayesian Personalized Ranking
 
 ### TODO
 
