@@ -77,7 +77,7 @@ Here, we present the ```Regression``` classifier using the ```mean_absolute_erro
 ```python
 from sklearn.preprocessing import OneHotEncoder
 from tfdiv.fm import Regression
-from tensorflow.metrics import mean_absolute_error
+import tensorflow as tf 
 import pandas as pd
 import numpy as np
 
@@ -99,7 +99,7 @@ batch_size = 32
 
 fm = Regression(epochs=epochs, 
                 batch_size=batch_size,
-                loss_function=mean_absolute_error)
+                loss_function=tf.metrics.mean_absolute_error)
                 
 fm.fit(csr, y)
 
