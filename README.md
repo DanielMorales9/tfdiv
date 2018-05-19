@@ -1,8 +1,8 @@
 # tfdiv
 
-The following is a library for Factorization Machines in [TensorFlow](https://www.tensorflow.org/).  
+The following is a library for Factorization Machines in [TensorFlow™](https://www.tensorflow.org/).  
 The library provides standard *Classifier* and *Regression* modules,
-that can be extended by defining a custom `loss_function`.  
+that can be extended by defining custom `loss_function`.  
 It also provides a *Ranking* module for several classifiers. 
 We implemented both pointwise and pairwise learning-to-rank, 
 in particular we also provide the 
@@ -60,7 +60,7 @@ to the following 2-way FM:
 
 Rendle also generalized to the d-way FM, 
 but we do not discuss it as it is not yet 
-implemented in this library see [Currently supported features](#Currently-supported-features) Section. 
+implemented in this library see [Currently supported features](#currently-supported-features) Section. 
 
 ## Usage
 
@@ -70,8 +70,9 @@ is compatible with any ```scikit-learn``` tool.
 ```tfdiv``` takes as input 
 ```scipy.sparse.csr_matrix``` to train and predict its classifiers.   
 Below we show a demo on how to use the ```tfdiv``` library, 
-in particular we show how to customize the ```Regression``` classifier 
-by passing a ```tensorflow``` compatible ```loss_function```.
+in particular we show how to customize the classifiers 
+by passing a ```tensorflow``` compatible ```loss_function```. 
+Here, we present the ```Regression``` classifier using the ```mean_absolute_error``` loss function.  
 
 ```python
 from sklearn.preprocessing import OneHotEncoder
@@ -120,7 +121,7 @@ python setup.py install
 ## Currently supported features
 
 Currently, only a second order factorization machine 
-is supported and its implemented in its sparse version only. 
+is supported and its implemented in its sparse version. 
 
 
 ### TODO
