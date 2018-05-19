@@ -4,6 +4,25 @@ from tfdiv.utility import cond
 
 
 class ComputationalGraph(ABC):
+    """
+    Abstract Computational Graph
+
+    Parameters
+    ------
+    dtype: `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    n_factors : int, optional (Default 10)
+        The number of factors used to factorize
+        pairwise interactions between variables.
+    """
 
     def __init__(self,
                  dtype=tf.float32,
@@ -144,7 +163,25 @@ class ComputationalGraph(ABC):
 
 
 class PointwiseGraph(ComputationalGraph):
+    """
+    Pointwise Graph
 
+    Parameters
+    ------
+    dtype: `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    n_factors : int, optional (Default 10)
+        The number of factors used to factorize
+        pairwise interactions between variables.
+    """
     def __init__(self,
                  loss_function=tf.losses.mean_squared_error,
                  dtype=tf.float32,
@@ -189,8 +226,26 @@ class PointwiseGraph(ComputationalGraph):
         tf.summary.scalar('loss', self.reduced_loss)
 
 
-# Ranking Classes
 class RankingGraph(ComputationalGraph):
+    """
+    Abstract Ranking Computational Graph
+
+    Parameters
+    ------
+    dtype: `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    n_factors : int, optional (Default 10)
+        The number of factors used to factorize
+        pairwise interactions between variables.
+    """
 
     def __init__(self,
                  dtype=tf.float32,
@@ -228,6 +283,28 @@ class RankingGraph(ComputationalGraph):
 
 class PointwiseRankingGraph(PointwiseGraph, RankingGraph):
 
+    """
+    Pointwise Ranking Computational Graph
+
+
+    Parameters
+    ------
+    dtype: `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    n_factors : int, optional (Default 10)
+        The number of factors used to factorize
+        pairwise interactions between variables.
+
+    """
+
     def __init__(self,
                  dtype=tf.float32,
                  l2_w=0.001,
@@ -246,7 +323,25 @@ class PointwiseRankingGraph(PointwiseGraph, RankingGraph):
 
 
 class BayesianPersonalizedRankingGraph(RankingGraph):
+    """
+    Bayesian Personalized Ranking Computational Graph
 
+    Parameters
+    ------
+    dtype: `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    n_factors : int, optional (Default 10)
+        The number of factors used to factorize
+        pairwise interactions between variables.
+    """
     def __init__(self,
                  dtype=tf.float32,
                  l2_w=0.001,
@@ -301,8 +396,27 @@ class BayesianPersonalizedRankingGraph(RankingGraph):
         tf.summary.scalar('loss', self.reduced_loss)
 
 
-# Latent Portfolio Classes
 class LatentFactorPortfolioGraph(RankingGraph):
+
+    """
+    Abstract Latent Factor Portfolio Graph
+
+    Parameters
+    ------
+    dtype: `tensorflow.dtype`, optional (Default tf.float32)
+        Tensors dtype to use.
+    l2_v : float, optional (Default 0.001)
+        L2 Regularization value for factorized parameters.
+    l2_w : float, optional (Default 0.001)
+        L2 Regularization value for linear weights.
+    learning_rate : float, optional (Default 0.001)
+        Learning rate schedule for weight updates.
+    optimizer : ``tf.train`` module, optional (Default tf.train.AdamOptimizer)
+        The optimized for parameters optimization.
+    n_factors : int, optional (Default 10)
+        The number of factors used to factorize
+        pairwise interactions between variables.
+    """
 
     def __init__(self,
                  dtype=tf.float32,
@@ -539,12 +653,22 @@ class LatentFactorPortfolioGraph(RankingGraph):
 
 class PointwiseLFPGraph(PointwiseRankingGraph, LatentFactorPortfolioGraph):
 
+    """
+    Pointwise Latent Factor Portfolio Graph
+    """
+
     def init_placeholder(self):
         PointwiseRankingGraph.init_placeholder(self)
         LatentFactorPortfolioGraph.init_placeholder(self)
 
 
 class BPRLFPGraph(BayesianPersonalizedRankingGraph, LatentFactorPortfolioGraph):
+
+    """
+    Bayesian Personalized Ranking version of Latent Factor Portfolio Graph
+
+    """
+
 
     def init_placeholder(self):
         BayesianPersonalizedRankingGraph.init_placeholder(self)
