@@ -669,7 +669,6 @@ class BPRLFPGraph(BayesianPersonalizedRankingGraph, LatentFactorPortfolioGraph):
 
     """
 
-
     def init_placeholder(self):
         BayesianPersonalizedRankingGraph.init_placeholder(self)
         LatentFactorPortfolioGraph.init_placeholder(self)
