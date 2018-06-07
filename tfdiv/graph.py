@@ -31,14 +31,18 @@ class ComputationalGraph(ABC):
                  n_factors=10,
                  init_std=0.01,
                  learning_rate=0.01,
+                 opt_kwargs=None,
                  optimizer=tf.train.AdamOptimizer):
+        if opt_kwargs is None:
+            opt_kwargs = {}
         self.n_factors = n_factors
         self.dtype = dtype
         self.l2_v = l2_v
         self.l2_w = l2_w
         self.init_std = init_std
         self.learning_rate = learning_rate
-        self.optimizer = optimizer(learning_rate=self.learning_rate)
+        self.opt_kwargs = opt_kwargs
+        self.optimizer = optimizer(learning_rate=self.learning_rate, **self.opt_kwargs)
         self.init_all_vars = None
         self.n_features = None
         self.summary_op = None
@@ -85,7 +89,7 @@ class ComputationalGraph(ABC):
     def init_params(self):
 
         lambda_w = tf.constant(self.l2_w, dtype=self.dtype, name='lambda_w')
-        lambda_v = tf.constant(self.l2_v, dtype=self.dtype, name='lambda_w')
+        lambda_v = tf.constant(self.l2_v, dtype=self.dtype, name='lambda_v')
         half = tf.constant(0.5, dtype=self.dtype, name='half')
         bias = tf.verify_tensor_all_finite(tf.Variable(self.init_std,
                                                        trainable=True,
@@ -190,8 +194,10 @@ class PointwiseGraph(ComputationalGraph):
                  n_factors=10,
                  init_std=0.01,
                  learning_rate=0.01,
+                 opt_kwargs=None,
                  optimizer=tf.train.AdamOptimizer):
         super(PointwiseGraph, self).__init__(dtype=dtype,
+                                             opt_kwargs=opt_kwargs,
                                              l2_w=l2_w,
                                              l2_v=l2_v,
                                              n_factors=n_factors,
@@ -254,8 +260,10 @@ class RankingGraph(ComputationalGraph):
                  n_factors=10,
                  init_std=0.01,
                  learning_rate=0.01,
+                 opt_kwargs=None,
                  optimizer=tf.train.AdamOptimizer):
         super(RankingGraph, self).__init__(dtype=dtype,
+                                           opt_kwargs=opt_kwargs,
                                            l2_w=l2_w,
                                            l2_v=l2_v,
                                            n_factors=n_factors,
@@ -312,10 +320,12 @@ class PointwiseRankingGraph(PointwiseGraph, RankingGraph):
                  n_factors=10,
                  init_std=0.01,
                  learning_rate=0.01,
+                 opt_kwargs=None,
                  optimizer=tf.train.AdamOptimizer):
         super(PointwiseRankingGraph, self).__init__(dtype=dtype,
                                                     l2_w=l2_w,
                                                     l2_v=l2_v,
+                                                    opt_kwargs=opt_kwargs,
                                                     n_factors=n_factors,
                                                     init_std=init_std,
                                                     learning_rate=learning_rate,
@@ -349,11 +359,13 @@ class BayesianPersonalizedRankingGraph(RankingGraph):
                  n_factors=10,
                  init_std=0.01,
                  learning_rate=0.01,
+                 opt_kwargs=None,
                  optimizer=tf.train.AdamOptimizer):
         super(BayesianPersonalizedRankingGraph, self).__init__(dtype=dtype,
                                                                l2_w=l2_w,
                                                                l2_v=l2_v,
                                                                n_factors=n_factors,
+                                                               opt_kwargs=opt_kwargs,
                                                                init_std=init_std,
                                                                learning_rate=learning_rate,
                                                                optimizer=optimizer)
@@ -425,9 +437,11 @@ class LatentFactorPortfolioGraph(RankingGraph):
                  n_factors=10,
                  init_std=0.01,
                  learning_rate=0.01,
+                 opt_kwargs=None,
                  optimizer=tf.train.AdamOptimizer):
         super(LatentFactorPortfolioGraph, self).__init__(dtype=dtype,
                                                          l2_w=l2_w,
+                                                         opt_kwargs=opt_kwargs,
                                                          l2_v=l2_v,
                                                          n_factors=n_factors,
                                                          init_std=init_std,
