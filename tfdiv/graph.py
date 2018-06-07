@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 import tensorflow as tf
 from tfdiv.utility import cond
 
+MEAN = 0.
+
 
 class ComputationalGraph(ABC):
     """
@@ -96,20 +98,25 @@ class ComputationalGraph(ABC):
                                                        name='bias'),
                                            msg='NaN or Inf in bias')
 
-        rnd_weights = tf.random_uniform(tf.expand_dims(self.n_features, 0),
-                                        minval=-self.init_std,
-                                        maxval=self.init_std,
-                                        dtype=self.dtype)
+        if self.dtype is tf.float32:
+            n_feats = tf.to_float(self.n_features)
+        else:
+            n_feats = tf.to_double(self.n_features)
+
+        rnd_weights = tf.random_normal(tf.expand_dims(self.n_features, 0),
+                                       stddev=self.init_std,
+                                       mean=MEAN,
+                                       dtype=self.dtype) / n_feats
         weights = tf.verify_tensor_all_finite(tf.Variable(rnd_weights,
                                                           trainable=True,
                                                           validate_shape=False,
                                                           name='weights'),
                                               msg='NaN or Inf in weights')
         tf_shape = tf.stack([self.n_features, self.n_factors])
-        rnd_params = tf.random_uniform(tf_shape,
-                                       minval=-self.init_std,
-                                       maxval=self.init_std,
-                                       dtype=self.dtype)
+        rnd_params = tf.random_normal(tf_shape,
+                                      stddev=self.init_std,
+                                      mean=MEAN,
+                                      dtype=self.dtype) / n_feats
         params = tf.verify_tensor_all_finite(tf.Variable(rnd_params,
                                                          trainable=True,
                                                          validate_shape=False,
