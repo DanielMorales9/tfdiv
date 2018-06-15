@@ -98,15 +98,10 @@ class ComputationalGraph(ABC):
                                                        name='bias'),
                                            msg='NaN or Inf in bias')
 
-        if self.dtype is tf.float32:
-            n_feats = tf.to_float(self.n_features)
-        else:
-            n_feats = tf.to_double(self.n_features)
-
         rnd_weights = tf.random_normal(tf.expand_dims(self.n_features, 0),
                                        stddev=self.init_std,
                                        mean=MEAN,
-                                       dtype=self.dtype) / n_feats
+                                       dtype=self.dtype)
         weights = tf.verify_tensor_all_finite(tf.Variable(rnd_weights,
                                                           trainable=True,
                                                           validate_shape=False,
@@ -116,7 +111,7 @@ class ComputationalGraph(ABC):
         rnd_params = tf.random_normal(tf_shape,
                                       stddev=self.init_std,
                                       mean=MEAN,
-                                      dtype=self.dtype) / n_feats
+                                      dtype=self.dtype)
         params = tf.verify_tensor_all_finite(tf.Variable(rnd_params,
                                                          trainable=True,
                                                          validate_shape=False,
