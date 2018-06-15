@@ -155,5 +155,5 @@ crashlytics.properties
 crashlytics-build.properties
 fabric.properties
 
-tfdiv/**/logs/**/*
-tfdiv/logs/**/*
+tfdiv/**/logs/*
+tfdiv/logs/*
