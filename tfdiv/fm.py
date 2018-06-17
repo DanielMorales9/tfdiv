@@ -818,12 +818,13 @@ class BayesianPersonalizedRanking(Ranking):
             if self._stopping and self._no_improvement > self.n_iter_no_change:
                 warnings.warn("Stopping at epoch: %s with loss %s" % (epoch, loss))
                 break
+        with self.graph.as_default():
+            self.core.ranking_computation()
 
     def predict(self, x, n_users, n_items, k=10):
         with self.graph.as_default():
             x = self.init_input(x)
             dataset = self.init_dataset(x)
-            self.core.ranking_computation()
 
         ops = self.core.y_hat
         results = []
