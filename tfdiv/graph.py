@@ -64,7 +64,6 @@ class ComputationalGraph(ABC):
         self.trainer = None
         self.init_all_vars = None
         self.batch_loss = None
-        self.is_training = None
         self.size = None
         self.ops = None
         self.x = None
@@ -90,12 +89,12 @@ class ComputationalGraph(ABC):
         self.fit_operations()
 
     def init_params(self):
-        is_training = tf.cond(self.is_training, lambda: True, lambda: None, strict=False)
+
         lambda_w = tf.constant(self.l2_w, dtype=self.dtype, name='lambda_w')
         lambda_v = tf.constant(self.l2_v, dtype=self.dtype, name='lambda_v')
         half = tf.constant(0.5, dtype=self.dtype, name='half')
         bias = tf.verify_tensor_all_finite(tf.Variable(self.init_std,
-                                                       trainable=is_training is not None,
+                                                       trainable=True,
                                                        name='bias'),
                                            msg='NaN or Inf in bias')
 
@@ -104,7 +103,7 @@ class ComputationalGraph(ABC):
                                        mean=MEAN,
                                        dtype=self.dtype)
         weights = tf.verify_tensor_all_finite(tf.Variable(rnd_weights,
-                                                          trainable=is_training is not None,
+                                                          trainable=True,
                                                           validate_shape=False,
                                                           name='weights'),
                                               msg='NaN or Inf in weights')
@@ -114,7 +113,7 @@ class ComputationalGraph(ABC):
                                       mean=MEAN,
                                       dtype=self.dtype)
         params = tf.verify_tensor_all_finite(tf.Variable(rnd_params,
-                                                         trainable=is_training is not None,
+                                                         trainable=True,
                                                          validate_shape=False,
                                                          name='params'),
                                              msg='NaN or Inf in parameters')
@@ -150,9 +149,6 @@ class ComputationalGraph(ABC):
             setattr(self, key, value)
 
     def init_placeholder(self):
-        self.is_training = tf.placeholder_with_default(True,
-                                                       shape=[],
-                                                       name='is_training')
         self.n_features = tf.placeholder(shape=[],
                                          dtype=tf.int64,
                                          name='n_features')

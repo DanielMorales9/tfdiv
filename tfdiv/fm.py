@@ -294,8 +294,7 @@ class Pointwise(BaseClassifier):
         while True:
             try:
                 res = self.session.run(self.core.y_hat,
-                                       feed_dict={self.handle: pred_handle,
-                                                  self.core.is_training: False})
+                                       feed_dict={self.handle: pred_handle})
                 results.append(res)
             except tf.errors.OutOfRangeError:
                 break
@@ -638,8 +637,7 @@ class RegressionRanking(Ranking, Regression):
                                     feed_dict={self.core.pred: pred,
                                                self.core.n_users: n_users,
                                                self.core.n_items: n_items,
-                                               self.core.k: k,
-                                               self.core.is_training: False})
+                                               self.core.k: k})
         return rank_res
 
 
@@ -750,8 +748,7 @@ class ClassificationRanking(Ranking, Classification):
                                     feed_dict={self.core.pred: pred,
                                                self.core.n_users: n_users,
                                                self.core.n_items: n_items,
-                                               self.core.k: k,
-                                               self.core.is_training: False})
+                                               self.core.k: k})
         return rank_res
 
 
@@ -912,8 +909,7 @@ class BayesianPersonalizedRanking(Ranking):
                                     feed_dict={self.core.pred: pred,
                                                self.core.n_users: n_users,
                                                self.core.n_items: n_items,
-                                               self.core.k: k,
-                                               self.core.is_training: False})
+                                               self.core.k: k})
         return rank_res
 
 
@@ -1006,7 +1002,6 @@ class LatentFactorPortfolio(Ranking):
                 this.core.k: i,
                 this.core.b: b,
                 this.core.n_users: n_users,
-                this.core.is_training: False
             }
 
         for i in tqdm(range(1, k),
@@ -1132,8 +1127,7 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
                 this.core.k: i,
                 this.core.b: b,
                 this.core.n_users: n_users,
-                this.handle: handle,
-                this.core.is_training: False
+                this.handle: handle
             }
 
         for i in tqdm(range(1, k),
@@ -1268,8 +1262,7 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                 this.core.k: i,
                 this.core.b: b,
                 this.core.n_users: n_users,
-                this.handle: handle,
-                this.core.is_training: False
+                this.handle: handle
             }
 
         for i in tqdm(range(1, k),
