@@ -103,107 +103,107 @@ class PairDataset(Dataset):
         return batch_size
 
 
-# class SimpleDataset(Dataset):
-#     """
-#     Attributes
-#     ----------
-#     x : scipy.sparse.csr_matrix, shape (n_samples, n_features)
-#         Training vector, where n_samples in the number of samples and
-#         n_features is the number of features.
-#
-#     y : np.array or None, shape (n_samples,)
-#         Target vector relative to X.
-#
-#     batch_size : int
-#         Size of batches.
-#         Use -1 for full-size batches
-#
-#     shuffle: bool
-#         Whether to shuffle the dataset or not
-#
-#     """
-#
-#     def __init__(self, x, y=None,
-#                  ntype=np.float32):
-#         super(SimpleDataset, self).__init__()
-#         if not isspmatrix_csr(x):
-#             raise TypeError("Unsupported Type: {}.\n"
-#                             "Use scipy.sparse.csr_matrix instead"
-#                             .format(type(x)))
-#         self.ntype = ntype
-#         self.x = x
-#         self.y = y
-#
-#     def get_next(self):
-#         """
-#         Split data to mini-batches.
-#
-#         Yields
-#         -------
-#         batch_x : scipy.sparse.csr_matrix, shape (batch_size, n_features)
-#             Same type as input samples
-#
-#         batch_y : np.array or None, shape (batch_size,)
-#
-#         """
-#         n_samples = self.x.shape[0]
-#
-#         if self.batch_size == -1:
-#             batch_size = n_samples
-#         elif self.batch_size < 1:
-#             raise ValueError('Parameter batch_size={} '
-#                              'is unsupported'.format(self.batch_size))
-#         else:
-#             batch_size = self.batch_size
-#
-#         if self._shuffle:
-#             idx = np.random.permutation(n_samples)
-#         else:
-#             idx = np.arange(n_samples)
-#
-#         x = self.x[idx, :]
-#         x.sort_indices()
-#         if self.y is not None:
-#             y = self.y[idx]
-#
-#         for i in range(0, n_samples, batch_size):
-#             upper_bound = min(i + batch_size, n_samples)
-#             batch_x = x[i:upper_bound]
-#             if self.y is not None:
-#                 batch_y = y[i:i + batch_size]
-#                 yield (batch_x, batch_y)
-#             else:
-#                 yield batch_x
-#
-#     def batch_to_feed_dict(self, x, y=None, core=None):
-#         """
-#         Parameters:
-#         -------
-#         batch_x : scipy.sparse.csr_matrix, shape (batch_size, n_features)
-#             Batch of training vector
-#
-#         batch_y : np.array or None, shape (batch_size,), default=None
-#             Batch of target vector relative to batch_x
-#
-#         core : tfdiv.graph.ComputationalGraph
-#             ComputationalGraph associated to the Classifier
-#
-#         Returns
-#         -------
-#         fd : dict
-#             Dict with formatted placeholders
-#         """
-#         fd = {}
-#
-#         # sparse case
-#         indices, values, shape = sparse_repr(x, self.ntype)
-#
-#         fd[core.x] = (indices, values, shape)
-#
-#         if y is not None:
-#             fd[core.y] = y.astype(np.float32)
-#
-#         return fd
+class SimpleDataset(Dataset):
+    """
+    Attributes
+    ----------
+    x : scipy.sparse.csr_matrix, shape (n_samples, n_features)
+        Training vector, where n_samples in the number of samples and
+        n_features is the number of features.
+
+    y : np.array or None, shape (n_samples,)
+        Target vector relative to X.
+
+    batch_size : int
+        Size of batches.
+        Use -1 for full-size batches
+
+    shuffle: bool
+        Whether to shuffle the dataset or not
+
+    """
+
+    def __init__(self, x, y=None,
+                 ntype=np.float32):
+        super(SimpleDataset, self).__init__()
+        if not isspmatrix_csr(x):
+            raise TypeError("Unsupported Type: {}.\n"
+                            "Use scipy.sparse.csr_matrix instead"
+                            .format(type(x)))
+        self.ntype = ntype
+        self.x = x
+        self.y = y
+
+    def get_next(self):
+        """
+        Split data to mini-batches.
+
+        Yields
+        -------
+        batch_x : scipy.sparse.csr_matrix, shape (batch_size, n_features)
+            Same type as input samples
+
+        batch_y : np.array or None, shape (batch_size,)
+
+        """
+        n_samples = self.x.shape[0]
+
+        if self.batch_size == -1:
+            batch_size = n_samples
+        elif self.batch_size < 1:
+            raise ValueError('Parameter batch_size={} '
+                             'is unsupported'.format(self.batch_size))
+        else:
+            batch_size = self.batch_size
+
+        if self._shuffle:
+            idx = np.random.permutation(n_samples)
+        else:
+            idx = np.arange(n_samples)
+
+        x = self.x[idx, :]
+        x.sort_indices()
+        if self.y is not None:
+            y = self.y[idx]
+
+        for i in range(0, n_samples, batch_size):
+            upper_bound = min(i + batch_size, n_samples)
+            batch_x = x[i:upper_bound]
+            if self.y is not None:
+                batch_y = y[i:i + batch_size]
+                yield (batch_x, batch_y)
+            else:
+                yield batch_x
+
+    def batch_to_feed_dict(self, x, y=None, core=None):
+        """
+        Parameters:
+        -------
+        batch_x : scipy.sparse.csr_matrix, shape (batch_size, n_features)
+            Batch of training vector
+
+        batch_y : np.array or None, shape (batch_size,), default=None
+            Batch of target vector relative to batch_x
+
+        core : tfdiv.graph.ComputationalGraph
+            ComputationalGraph associated to the Classifier
+
+        Returns
+        -------
+        fd : dict
+            Dict with formatted placeholders
+        """
+        fd = {}
+
+        # sparse case
+        indices, values, shape = sparse_repr(x, self.ntype)
+
+        fd[core.x] = (indices, values, shape)
+
+        if y is not None:
+            fd[core.y] = y.astype(self.ntype)
+
+        return fd
 
 
 class Sampler(ABC):

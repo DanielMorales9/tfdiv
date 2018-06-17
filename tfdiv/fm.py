@@ -4,7 +4,7 @@ from tfdiv.utility import sparse_repr, loss_logistic, \
     matrix_swap_at_k
 from sklearn.base import BaseEstimator, ClassifierMixin
 from tfdiv.graph import PointwiseLFPGraph
-from tfdiv.dataset import PairDataset
+from tfdiv.dataset import PairDataset, SimpleDataset
 from abc import abstractmethod
 import tensorflow as tf
 from tqdm import tqdm
@@ -46,6 +46,7 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
                  log_dir=None,
                  session_config=None,
                  tol=None,
+                 n_factors=10,
                  n_iter_no_change=10):
         self.seed = seed
         self.graph = tf.Graph()
@@ -55,6 +56,7 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
                                   graph=self.graph)
 
         self.dtype = dtype
+        self.n_factors = n_factors
         self.ntype = np.float32 if dtype is tf.float32 else np.float64
         self.epochs = epochs
         self.show_progress = show_progress
@@ -69,7 +71,6 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
         self.log_dir = log_dir
         self.logging_enabled = log_dir is not None
         self.log_writer = None
-        self.handle = None
         self.core = None
         self.n_features = None
 
@@ -137,9 +138,6 @@ class Pointwise(BaseClassifier):
     batch_size : int, optional (Default -1)
         Batch size to use while training classifier.
         -1 means no batch_size to use.
-    shuffle_size : int, optional (Default 1000)
-        A tensorflow's necessary parameter to enable shuffling on
-        its dataset.
     n_factors : int, optional (Default 10)
         the number of factors used to factorize
         pairwise interactions between variables.
@@ -173,7 +171,6 @@ class Pointwise(BaseClassifier):
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
-                 shuffle_size=1000,
                  n_factors=10,
                  dtype=tf.float32,
                  init_std=0.01,
@@ -189,7 +186,8 @@ class Pointwise(BaseClassifier):
                  n_iter_no_change=10,
                  seed=1,
                  core=None):
-        super(Pointwise, self).__init__(epochs=epochs,
+        super(Pointwise, self).__init__(n_factors=n_factors,
+                                        epochs=epochs,
                                         batch_size=batch_size,
                                         show_progress=show_progress,
                                         seed=seed,
@@ -197,8 +195,6 @@ class Pointwise(BaseClassifier):
                                         session_config=session_config,
                                         n_iter_no_change=n_iter_no_change,
                                         tol=tol)
-        self.n_factors = n_factors
-        self.shuffle_size = shuffle_size
         self.init_std = init_std
         self.dtype = dtype
         self.optimizer = optimizer
@@ -206,6 +202,7 @@ class Pointwise(BaseClassifier):
         self.loss_function = loss_function
         self.l2_w = l2_w
         self.l2_v = l2_v
+        self.train = None
 
         # Computational graph initialization
         self.core = core if core else PointwiseGraph(n_factors=self.n_factors,
@@ -217,41 +214,31 @@ class Pointwise(BaseClassifier):
                                                      l2_v=self.l2_v,
                                                      l2_w=self.l2_w)
 
-    def init_computational_graph(self, it):
-        if it:
-            next_x, next_y = it.get_next()
-            self.core.set_params(**{'x': next_x, 'y': next_y})
-            self.core.define_graph()
+    def init_input(self, x, y=None):
+        if not x.has_sorted_indices:
+            x.sort_indices()
+        n_samples, self.n_features = x.shape
+        if y is not None:
+            return x, y, n_samples
+        return x, n_samples
 
-    def init_iterator(self, dataset):
-        iterator = None
-        if self.handle is None:
-            self.handle = tf.placeholder(tf.string, shape=[])
-            iterator = tf.data.Iterator.from_string_handle(
-                self.handle,
-                output_types=dataset.output_types,
-                output_shapes=dataset.output_shapes,
-                output_classes=dataset.output_classes)
-        return iterator
+    def init_dataset(self, x, y=None):
+        dataset = SimpleDataset(x, y=y, ntype=self.ntype) \
+            .batch(self.batch_size)
+        if y is not None:
+            dataset.shuffle(True)
+        return dataset
 
-    def init_dataset(self, x_d, y_d, n_samples, train):
-        batch_size = n_samples if self.batch_size == -1 \
-            else self.batch_size
-        dataset = tf.data.Dataset.from_tensor_slices((x_d, y_d)) \
-            .batch(batch_size)
-        if train:
-            dataset = dataset.shuffle(self.shuffle_size)
-
-        iterator = dataset.make_initializable_iterator()
-        return dataset, iterator
+    def init_computational_graph(self):
+        self.core.define_graph()
 
     def fit(self, X, y=None):
         with self.graph.as_default():
-            input_vars = self.init_input(X, y)
-            dataset, train_iterator = self.init_dataset(*input_vars)
-            it = self.init_iterator(dataset)
-            self.init_computational_graph(it)
-            n_samples = input_vars[2]
+            x, y, n_samples = self.init_input(X, y)
+            dataset = self.init_dataset(x, y)
+            if self.train is None:
+                self.init_computational_graph()
+        self.train = True
 
         if not self.session.run(tf.is_variable_initialized(
                 self.core.global_step)):
@@ -259,21 +246,15 @@ class Pointwise(BaseClassifier):
                              feed_dict={self.core.n_features: self.n_features})
 
         ops = self.core.ops
-        train_handle = self.session.run(train_iterator.string_handle())
-        fd = {self.handle: train_handle}
         for epoch in tqdm(range(self.epochs),
                           unit='epochs',
                           disable=not self.show_progress):
-            self.session.run(train_iterator.initializer)
             loss = 0.0
-            while True:
-                try:
-                    _, summary, step, batch_loss = self.session.run(ops,
-                                                                    feed_dict=fd)
-                    self.log_summary(summary, step)
-                    loss += batch_loss
-                except tf.errors.OutOfRangeError:
-                    break
+            for x, y in dataset.get_next():
+                fd = dataset.batch_to_feed_dict(x, y, self.core)
+                _, summary, step, batch_loss = self.session.run(ops, feed_dict=fd)
+                self.log_summary(summary, step)
+                loss += batch_loss
 
             loss /= n_samples
 
@@ -284,20 +265,16 @@ class Pointwise(BaseClassifier):
                 break
 
     def predict(self, X):
+        self.train = False
         with self.graph.as_default():
-            input_vars = self.init_input(X)
-            _, it = self.init_dataset(*input_vars)
+            x, n_samples = self.init_input(X)
+            dataset = self.init_dataset(x)
 
-        pred_handle = self.session.run(it.string_handle())
         results = []
-        self.session.run(it.initializer)
-        while True:
-            try:
-                res = self.session.run(self.core.y_hat,
-                                       feed_dict={self.handle: pred_handle})
-                results.append(res)
-            except tf.errors.OutOfRangeError:
-                break
+        for x in dataset.get_next():
+            fd = dataset.batch_to_feed_dict(x, core=self.core)
+            res = self.session.run(self.core.y_hat, feed_dict=fd)
+            results.append(res)
 
         results = np.concatenate(results).reshape(-1)
         return self.decision_function(results)
@@ -320,9 +297,6 @@ class Regression(Pointwise):
     batch_size : int, optional (Default -1)
         Batch size to use while training classifier.
         -1 means no batch_size to use.
-    shuffle_size : int, optional (Default 1000)
-        A tensorflow's necessary parameter to enable shuffling on
-        its dataset.
     n_factors : int, optional (Default 10)
         the number of factors used to factorize
         pairwise interactions between variables.
@@ -358,7 +332,6 @@ class Regression(Pointwise):
                  loss_function=tf.losses.mean_squared_error,
                  epochs=100,
                  batch_size=-1,
-                 shuffle_size=1000,
                  n_factors=10,
                  dtype=tf.float32,
                  init_std=0.01,
@@ -375,7 +348,6 @@ class Regression(Pointwise):
                  core=None):
         super(Regression, self).__init__(epochs=epochs,
                                          loss_function=loss_function,
-                                         shuffle_size=shuffle_size,
                                          n_factors=n_factors,
                                          dtype=dtype,
                                          init_std=init_std,
@@ -391,20 +363,6 @@ class Regression(Pointwise):
                                          n_iter_no_change=n_iter_no_change,
                                          tol=tol,
                                          core=core)
-
-    def init_input(self, x, y=None):
-        if not x.has_sorted_indices:
-            x.sort_indices()
-        x_d = tf.SparseTensor(*sparse_repr(x, self.ntype))
-
-        train = y is not None
-        if train:
-            n_samples, self.n_features = x.shape
-            y_d = tf.convert_to_tensor(y, self.dtype)
-        else:
-            n_samples, _ = x.shape
-            y_d = tf.zeros(x.shape[0], dtype=self.dtype)
-        return x_d, y_d, n_samples, train
 
     def decision_function(self, x):
         return x
@@ -428,9 +386,6 @@ class Classification(Pointwise):
     label_transform: function, optional
         Function that transforms y labels to a value interval
         that better suits the passed loss_function.
-    shuffle_size : int, optional (Default 1000)
-        A tensorflow's necessary parameter to enable shuffling on
-        its dataset.
     n_factors : int, optional (Default 10)
         the number of factors used to factorize
         pairwise interactions between variables.
@@ -467,7 +422,6 @@ class Classification(Pointwise):
                  label_transform=lambda y: y * 2 - 1,
                  epochs=100,
                  batch_size=-1,
-                 shuffle_size=1000,
                  n_factors=10,
                  dtype=tf.float32,
                  init_std=0.01,
@@ -484,7 +438,6 @@ class Classification(Pointwise):
                  core=None):
         super(Classification, self).__init__(epochs=epochs,
                                              loss_function=loss_function,
-                                             shuffle_size=shuffle_size,
                                              n_factors=n_factors,
                                              dtype=dtype,
                                              init_std=init_std,
@@ -501,23 +454,6 @@ class Classification(Pointwise):
                                              tol=tol,
                                              core=core)
         self.label_transform = label_transform
-
-    def init_input(self, x, y=None):
-        if not x.has_sorted_indices:
-            x.sort_indices()
-        x_d = tf.SparseTensor(*sparse_repr(x, self.ntype))
-
-        train = y is not None
-        if train:
-            if not (set(y) == {0, 1}):
-                raise ValueError("Input labels must be in set {0,1}.")
-            y = self.label_transform(y)
-            n_samples, self.n_features = x.shape
-            y_d = tf.convert_to_tensor(y, self.dtype)
-        else:
-            n_samples, _ = x.shape
-            y_d = tf.zeros(x.shape[0], dtype=self.dtype)
-        return x_d, y_d, n_samples, train
 
     def decision_function(self, x):
         return (x > 0).astype(int)
@@ -536,7 +472,7 @@ class Ranking(BaseClassifier):
         raise NotImplementedError
 
 
-class RegressionRanking(Ranking, Regression):
+class RegressionRanking(Regression, Ranking):
     """
     Pointwise Ranking Module implemented with a regression classifier
 
@@ -548,9 +484,6 @@ class RegressionRanking(Ranking, Regression):
     batch_size : int, optional (Default -1)
         Batch size to use while training classifier.
         -1 means no batch_size to use.
-    shuffle_size : int, optional (Default 1000)
-        A tensorflow's necessary parameter to enable shuffling on
-        its dataset.
     n_factors : int, optional (Default 10)
         the number of factors used to factorize
         pairwise interactions between variables.
@@ -585,7 +518,6 @@ class RegressionRanking(Ranking, Regression):
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
-                 shuffle_size=1000,
                  n_factors=10,
                  dtype=tf.float32,
                  init_std=0.01,
@@ -613,7 +545,6 @@ class RegressionRanking(Ranking, Regression):
 
         super(RegressionRanking, self).__init__(epochs=epochs,
                                                 batch_size=batch_size,
-                                                shuffle_size=shuffle_size,
                                                 n_factors=n_factors,
                                                 dtype=dtype,
                                                 init_std=init_std,
@@ -630,8 +561,10 @@ class RegressionRanking(Ranking, Regression):
                                                 tol=tol, core=self.core)
 
     def predict(self, X, n_users, n_items, k=10):
-        with self.graph.as_default():
-            self.core.ranking_computation()
+        if self.train:
+            with self.graph.as_default():
+                self.core.ranking_computation()
+            self.train = False
         pred = Regression.predict(self, X)
         rank_res = self.session.run(self.core.ranking_results,
                                     feed_dict={self.core.pred: pred,
@@ -641,7 +574,7 @@ class RegressionRanking(Ranking, Regression):
         return rank_res
 
 
-class ClassificationRanking(Ranking, Classification):
+class ClassificationRanking(Classification, Ranking):
     """
     Pointwise Ranking Module implemented as a Classification classifier
 
@@ -653,9 +586,6 @@ class ClassificationRanking(Ranking, Classification):
     batch_size : int, optional (Default -1)
         Batch size to use while training classifier.
         -1 means no batch_size to use.
-    shuffle_size : int, optional (Default 1000)
-        A tensorflow's necessary parameter to enable shuffling on
-        its dataset.
     n_factors : int, optional (Default 10)
         the number of factors used to factorize
         pairwise interactions between variables.
@@ -690,7 +620,6 @@ class ClassificationRanking(Ranking, Classification):
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
-                 shuffle_size=1000,
                  n_factors=10,
                  dtype=tf.float32,
                  init_std=0.01,
@@ -717,32 +646,31 @@ class ClassificationRanking(Ranking, Classification):
                                        l2_w=l2_w)
 
         super(ClassificationRanking, self).__init__(epochs=epochs,
-                                                    batch_size=batch_size,
-                                                    shuffle_size=shuffle_size,
-                                                    n_factors=n_factors,
-                                                    dtype=dtype,
-                                                    init_std=init_std,
+                                                    label_transform=label_transform,
                                                     loss_function=loss_function,
                                                     l2_w=l2_w,
                                                     l2_v=l2_v,
                                                     learning_rate=learning_rate,
+                                                    batch_size=batch_size,
+                                                    n_factors=n_factors,
+                                                    dtype=dtype,
                                                     optimizer=optimizer,
                                                     seed=seed,
                                                     show_progress=show_progress,
                                                     log_dir=log_dir,
-                                                    label_transform=label_transform,
                                                     session_config=session_config,
                                                     n_iter_no_change=n_iter_no_change,
                                                     tol=tol,
                                                     core=self.core)
 
-
     def decision_function(self, x):
         return x
 
     def predict(self, X, n_users, n_items, k=10):
-        with self.graph.as_default():
-            self.core.ranking_computation()
+        if self.train:
+            with self.graph.as_default():
+                self.core.ranking_computation()
+            self.train = False
         pred = Classification.predict(self, X)
         rank_res = self.session.run(self.core.ranking_results,
                                     feed_dict={self.core.pred: pred,
@@ -815,6 +743,7 @@ class BayesianPersonalizedRanking(Ranking):
         super(BayesianPersonalizedRanking, self).__init__(epochs=epochs,
                                                           batch_size=batch_size,
                                                           dtype=dtype,
+                                                          n_factors=n_factors,
                                                           seed=seed,
                                                           show_progress=show_progress,
                                                           log_dir=log_dir,
@@ -823,7 +752,6 @@ class BayesianPersonalizedRanking(Ranking):
                                                           tol=tol)
         self.frac = frac
         self.bootstrap_sampling = bootstrap_sampling
-        self.n_factors = n_factors
         self.init_std = init_std
         self.dtype = dtype
         self.optimizer = optimizer
@@ -942,6 +870,7 @@ class LatentFactorPortfolio(Ranking):
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
+                 n_factors=10,
                  dtype=tf.float32,
                  seed=1,
                  show_progress=True,
@@ -951,6 +880,7 @@ class LatentFactorPortfolio(Ranking):
                  n_iter_no_change=10):
         super(LatentFactorPortfolio, self).__init__(epochs=epochs,
                                                     batch_size=batch_size,
+                                                    n_factors=n_factors,
                                                     dtype=dtype,
                                                     seed=seed,
                                                     show_progress=show_progress,
@@ -1027,9 +957,6 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
     batch_size : int, optional (Default -1)
         Batch size to use while training classifier.
         -1 means no batch_size to use.
-    shuffle_size : int, optional (Default 1000)
-        A tensorflow's necessary parameter to enable shuffling on
-        its dataset.
     n_factors : int, optional (Default 10)
         the number of factors used to factorize
         pairwise interactions between variables.
@@ -1064,7 +991,6 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
-                 shuffle_size=1000,
                  n_factors=10,
                  dtype=tf.float32,
                  init_std=0.01,
@@ -1091,7 +1017,6 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
 
         super(RegressionLFP, self).__init__(epochs=epochs,
                                             batch_size=batch_size,
-                                            shuffle_size=shuffle_size,
                                             n_factors=n_factors,
                                             dtype=dtype,
                                             init_std=init_std,
@@ -1112,33 +1037,27 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
         with self.graph.as_default():
             with tf.name_scope(name='delta_f_computation'):
                 self.core.delta_f_computation()
-            with tf.name_scope(name='dataset'):
-                y = tf.convert_to_tensor(np.empty(X.shape[0], dtype=self.ntype))
-                x = tf.SparseTensor(*sparse_repr(X, self.ntype))
-                dataset = tf.data.Dataset.from_tensors((x, y))
-                delta_iterator = dataset.make_initializable_iterator()
 
-        handle = self.session.run(delta_iterator.string_handle())
+        x, n_samples = self.init_input(X)
+        dataset = SimpleDataset(x, ntype=self.ntype)
 
-        def parametric_feed_dict(this, pred, rank, i):
-            return {
-                this.core.predictions: pred,
-                this.core.rankings: rank,
-                this.core.k: i,
-                this.core.b: b,
-                this.core.n_users: n_users,
-                this.handle: handle
-            }
-
+        core = self.core
         for i in tqdm(range(1, k),
                       unit='k',
                       disable=not self.show_progress):
-            self.session.run(delta_iterator.initializer)
-            delta_f = self.session.run(self.core.delta_f,
-                                       feed_dict=parametric_feed_dict(self, pred, rank, i))
-            delta_arg_max = np.argmax(delta_f, axis=1)
-            matrix_swap_at_k(delta_arg_max, k, pred)
-            matrix_swap_at_k(delta_arg_max, k, rank)
+            for x in dataset.get_next():
+                fd = dataset.batch_to_feed_dict(x, core=core)
+                fd[core.predictions] = pred
+                fd[core.rankings] = rank
+                fd[core.k] = i
+                fd[core.b] = b
+                fd[core.n_users] = n_users
+                delta_f = self.session.run(self.core.delta_f,
+                                           feed_dict=fd)
+                delta_arg_max = np.argmax(delta_f, axis=1)
+                matrix_swap_at_k(delta_arg_max, k, pred)
+                matrix_swap_at_k(delta_arg_max, k, rank)
+                matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
 
     def fit(self, X, y, n_users, n_items):
@@ -1164,9 +1083,6 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
     batch_size : int, optional (Default -1)
         Batch size to use while training classifier.
         -1 means no batch_size to use.
-    shuffle_size : int, optional (Default 1000)
-        A tensorflow's necessary parameter to enable shuffling on
-        its dataset.
     n_factors : int, optional (Default 10)
         the number of factors used to factorize
         pairwise interactions between variables.
@@ -1198,39 +1114,39 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
         Computational Graph
     """
     def __init__(self,
+                 loss_function=loss_logistic,
+                 label_transform=lambda y: y * 2 - 1,
                  epochs=100,
                  batch_size=-1,
-                 shuffle_size=1000,
                  n_factors=10,
                  dtype=tf.float32,
                  init_std=0.01,
-                 loss_function=tf.losses.mean_squared_error,
                  l2_v=0.001,
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
-                 seed=1,
                  show_progress=True,
                  log_dir=None,
                  session_config=None,
                  tol=None,
                  n_iter_no_change=10,
+                 seed=1,
                  core=None):
         self.core = core if core \
-            else PointwiseRankingGraph(n_factors=n_factors,
-                                       init_std=init_std,
-                                       dtype=dtype,
-                                       optimizer=optimizer,
-                                       learning_rate=learning_rate,
-                                       l2_v=l2_v,
-                                       l2_w=l2_w)
+            else PointwiseLFPGraph(n_factors=n_factors,
+                                   init_std=init_std,
+                                   dtype=dtype,
+                                   optimizer=optimizer,
+                                   learning_rate=learning_rate,
+                                   l2_v=l2_v,
+                                   l2_w=l2_w)
         super(ClassificationLFP, self).__init__(epochs=epochs,
+                                                loss_function=loss_function,
+                                                label_transform=label_transform,
+                                                init_std=init_std,
                                                 batch_size=batch_size,
-                                                shuffle_size=shuffle_size,
                                                 n_factors=n_factors,
                                                 dtype=dtype,
-                                                init_std=init_std,
-                                                loss_function=loss_function,
                                                 l2_w=l2_w,
                                                 l2_v=l2_v,
                                                 learning_rate=learning_rate,
@@ -1247,33 +1163,27 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
         with self.graph.as_default():
             with tf.name_scope(name='delta_f_computation'):
                 self.core.delta_f_computation()
-            with tf.name_scope(name='dataset'):
-                y = tf.convert_to_tensor(np.empty(X.shape[0], dtype=self.ntype))
-                x = tf.SparseTensor(*sparse_repr(X, self.ntype))
-                dataset = tf.data.Dataset.from_tensors((x, y))
-                delta_iterator = dataset.make_initializable_iterator()
 
-        handle = self.session.run(delta_iterator.string_handle())
+        x, n_samples = self.init_input(X)
+        dataset = SimpleDataset(x, ntype=self.ntype)
 
-        def parametric_feed_dict(this, pred, rank, i):
-            return {
-                this.core.predictions: pred,
-                this.core.rankings: rank,
-                this.core.k: i,
-                this.core.b: b,
-                this.core.n_users: n_users,
-                this.handle: handle
-            }
-
+        core = self.core
         for i in tqdm(range(1, k),
                       unit='k',
                       disable=not self.show_progress):
-            self.session.run(delta_iterator.initializer)
-            delta_f = self.session.run(self.core.delta_f,
-                                       feed_dict=parametric_feed_dict(self, pred, rank, i))
-            delta_arg_max = np.argmax(delta_f, axis=1)
-            matrix_swap_at_k(delta_arg_max, k, pred)
-            matrix_swap_at_k(delta_arg_max, k, rank)
+            for x in dataset.get_next():
+                fd = dataset.batch_to_feed_dict(x, core=core)
+                fd[core.predictions] = pred
+                fd[core.rankings] = rank
+                fd[core.k] = i
+                fd[core.b] = b
+                fd[core.n_users] = n_users
+                delta_f = self.session.run(self.core.delta_f,
+                                           feed_dict=fd)
+                delta_arg_max = np.argmax(delta_f, axis=1)
+                matrix_swap_at_k(delta_arg_max, k, pred)
+                matrix_swap_at_k(delta_arg_max, k, rank)
+                matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
 
     def fit(self, X, y, n_users, n_items):
@@ -1349,13 +1259,13 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                  n_iter_no_change=10,
                  core=None):
 
-        self.core = core if core else BPRLFPGraph(n_factors=self.n_factors,
-                                                  init_std=self.init_std,
-                                                  dtype=self.dtype,
-                                                  optimizer=self.optimizer,
-                                                  learning_rate=self.learning_rate,
-                                                  l2_v=self.l2_v,
-                                                  l2_w=self.l2_w)
+        self.core = core if core else BPRLFPGraph(n_factors=n_factors,
+                                                  init_std=init_std,
+                                                  dtype=dtype,
+                                                  optimizer=optimizer,
+                                                  learning_rate=learning_rate,
+                                                  l2_v=l2_v,
+                                                  l2_w=l2_w)
 
         super(BayesianPersonalizedRankingLFP, self).__init__(epochs=epochs,
                                                              batch_size=batch_size,

@@ -70,7 +70,7 @@ class ComputationalGraph(ABC):
         self.y = None
 
     def define_graph(self):
-        self.global_step = tf.train.create_global_step()
+        self.global_step = tf.train.get_or_create_global_step()
         with tf.name_scope('placeholders'):
             self.init_placeholder()
         with tf.name_scope('parameters'):
@@ -152,6 +152,9 @@ class ComputationalGraph(ABC):
         self.n_features = tf.placeholder(shape=[],
                                          dtype=tf.int64,
                                          name='n_features')
+        self.x = tf.sparse_placeholder(self.dtype,
+                                       shape=[None, self.n_features],
+                                       name='pos')
 
     def fit_operations(self):
         self.ops = [self.trainer,
@@ -207,6 +210,11 @@ class PointwiseGraph(ComputationalGraph):
                                              learning_rate=learning_rate,
                                              optimizer=optimizer)
         self.loss_function = loss_function
+
+    def init_placeholder(self):
+        super(PointwiseGraph, self).init_placeholder()
+        self.y = tf.placeholder(shape=[None], name="y",
+                                dtype=self.dtype)
 
     def init_main_graph(self):
         x = self.x
@@ -332,6 +340,10 @@ class PointwiseRankingGraph(PointwiseGraph, RankingGraph):
                                                     init_std=init_std,
                                                     learning_rate=learning_rate,
                                                     optimizer=optimizer)
+
+    def init_placeholder(self):
+        super(PointwiseRankingGraph, self).init_placeholder()
+        self.y = tf.placeholder(shape=[None], name="y", dtype=self.dtype)
 
 
 class BayesianPersonalizedRankingGraph(RankingGraph):
