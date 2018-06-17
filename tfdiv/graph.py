@@ -90,7 +90,7 @@ class ComputationalGraph(ABC):
         self.fit_operations()
 
     def init_params(self):
-        is_training = tf.cond(self.is_training, lambda: True, lambda: None)
+        is_training = tf.cond(self.is_training, lambda: True, lambda: None, strict=False)
         lambda_w = tf.constant(self.l2_w, dtype=self.dtype, name='lambda_w')
         lambda_v = tf.constant(self.l2_v, dtype=self.dtype, name='lambda_v')
         half = tf.constant(0.5, dtype=self.dtype, name='half')
