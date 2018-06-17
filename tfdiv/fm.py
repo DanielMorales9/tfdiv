@@ -629,9 +629,12 @@ class RegressionRanking(Ranking, Regression):
                                                 n_iter_no_change=n_iter_no_change,
                                                 tol=tol, core=self.core)
 
-    def predict(self, X, n_users, n_items, k=10):
+    def fit(self, X, y=None):
+        Regression.fit(self, X, y)
         with self.graph.as_default():
             self.core.ranking_computation()
+
+    def predict(self, X, n_users, n_items, k=10):
         pred = Regression.predict(self, X)
         rank_res = self.session.run(self.core.ranking_results,
                                     feed_dict={self.core.pred: pred,
@@ -736,13 +739,15 @@ class ClassificationRanking(Ranking, Classification):
                                                     tol=tol,
                                                     core=self.core)
 
+    def fit(self, X, y=None):
+        Classification.fit(self, X, y)
+        with self.graph.as_default():
+            self.core.ranking_computation()
 
     def decision_function(self, x):
         return x
 
     def predict(self, X, n_users, n_items, k=10):
-        with self.graph.as_default():
-            self.core.ranking_computation()
         pred = Classification.predict(self, X)
         rank_res = self.session.run(self.core.ranking_results,
                                     feed_dict={self.core.pred: pred,
@@ -890,12 +895,13 @@ class BayesianPersonalizedRanking(Ranking):
             if self._stopping and self._no_improvement > self.n_iter_no_change:
                 warnings.warn("Stopping at epoch: %s with loss %s" % (epoch, loss))
                 break
+        with self.graph.as_default():
+            self.core.ranking_computation()
 
     def predict(self, x, n_users, n_items, k=10):
         with self.graph.as_default():
             x = self.init_input(x)
             dataset = self.init_dataset(x)
-            self.core.ranking_computation()
 
         ops = self.core.y_hat
         results = []
