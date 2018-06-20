@@ -8,7 +8,7 @@ import sys
 PATH = "~/PycharmProjects/DivMachines/data/ua.base"
 columns = ['user', 'item', 'rating', 'timestamp']
 
-train = pd.read_csv(PATH, delimiter='\t', names=columns).sample(1000)[columns[:-2]]
+train = pd.read_csv(PATH, delimiter='\t', names=columns).sample(10000)[columns[:-2]]
 
 n_users = train.user.unique().shape[0]
 n_items = train.item.unique().shape[0]
@@ -32,10 +32,8 @@ df['item'] = np.concatenate(df['item'])
 
 neg = pd.DataFrame(df)
 
-x = pd.merge(pos[['user', 'item']], neg, on='user')
-
-pos = x[['user', 'item_x']].values
-neg = x[['user', 'item_y']].values
+pos = pos[['user', 'item']].values
+neg = neg[['user', 'item']].values
 
 train_x = train.values
 x = enc.fit(train_x).transform(train_x)
@@ -52,7 +50,6 @@ k = int(sys.argv[3])
 
 fm = BayesianPersonalizedRanking(epochs=epochs,
                                  bootstrap_sampling='uniform_user',
-                                 log_dir="../logs/bpr-"+str(epochs)+"_size-"+str(batch_size),
                                  batch_size=batch_size, tol=1e-4, frac=0.7,
                                  l2_w=0.01, l2_v=0.01, init_std=0.01)
 fm.fit(pos, neg)

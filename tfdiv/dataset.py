@@ -115,25 +115,13 @@ class Sampler(ABC):
     def get_index(self):
         poo = np.transpose(self.pos.nonzero())
 
-        pdf = pd.DataFrame(poo, columns=['row', 'col']) \
-            .groupby('row', as_index=False).min()
-
-        def get_dict(df):
-            dic = defaultdict(list)
-            for k, v in df.groupby('col'):
-                dic[k].extend(list(v['row'].values))
-            return dic
-
-        pdict = get_dict(pdf)
-        pdf = pd.DataFrame(pdict, columns=['user', 'prow'])
+        pdf = pd.DataFrame(poo, columns=['prow', 'user']) \
+            .groupby('prow', as_index=False).min()
         ind = pdf
-
-        if self.neg is None:
+        if self.neg is not None:
             noo = np.transpose(self.neg.nonzero())
-            ndf = pd.DataFrame(noo, columns=['row', 'col']) \
-                .groupby('row', as_index=False).min()
-            ndict = get_dict(ndf)
-            ndf = pd.DataFrame(ndict, columns=['user', 'nrow'])
+            ndf = pd.DataFrame(noo, columns=['nrow', 'user']) \
+                .groupby('nrow', as_index=False).min()
             ind = pd.merge(pdf, ndf, on="user")
         return ind
 
@@ -182,11 +170,6 @@ class RandomSampler(Sampler):
     def __init__(self, pos, neg=None,
                  frac=0.5, ntype=np.float32):
         super(RandomSampler, self).__init__()
-        if neg is not None:
-            assert pos.shape == neg.shape, \
-                "positive and negative sample-sets" \
-                "must have the same dimensions"
-
         self.pos = pos
         self.neg = neg
         self.ntype = ntype
@@ -194,11 +177,11 @@ class RandomSampler(Sampler):
         self.size = int(n_samples * frac)
         self.indexes = self.get_index()
 
-    def _get_sample_index(self):
+    def _get_pos_sample_index(self):
         self.sample_idx = self.indexes.sample(self.size)
         return self.sample_idx['prow']
 
-    def _get_pos_sample_index(self):
+    def _get_neg_sample_index(self):
         return self.sample_idx['nrow']
 
 
@@ -216,7 +199,7 @@ class UniformUserSampler(Sampler):
 
     def _get_pos_sample_index(self):
         self.sample_idx = self.indexes.groupby(by='user', as_index=False)\
-            .apply(lambda x: x.sample(frac=self.frac)).sample(frac=1)
+            .apply(lambda x: x.sample(frac=self.frac)).sample(frac=1.0)
         return self.sample_idx['prow'].values
 
     def _get_neg_sample_index(self):
