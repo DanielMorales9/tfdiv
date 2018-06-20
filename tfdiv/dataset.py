@@ -207,10 +207,6 @@ class UniformUserSampler(Sampler):
     def __init__(self, pos, neg=None,
                  frac=0.5, ntype=np.float32):
         super(UniformUserSampler, self).__init__()
-        if neg is not None:
-            assert pos.shape == neg.shape, \
-                "positive and negative sample-sets" \
-                "must have the same dimensions"
 
         self.pos = pos
         self.neg = neg
