@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from scipy.sparse import isspmatrix_csr
 from abc import abstractmethod, ABC
 from tfdiv.utility import sparse_repr
@@ -103,6 +105,123 @@ class PairDataset(Dataset):
         return batch_size
 
 
+class Sampler(ABC):
+
+    def __init__(self):
+        self.size = None
+        self.pos = None
+        self.neg = None
+
+    def get_index(self):
+        poo = np.transpose(self.pos.nonzero())
+        noo = np.transpose(self.neg.nonzero())
+        pdf = pd.DataFrame(poo, columns=['row', 'col']) \
+            .groupby('row', as_index=False).min()
+        ndf = pd.DataFrame(noo, columns=['row', 'col']) \
+            .groupby('row', as_index=False).min()
+
+        def get_dict(df):
+            dic = defaultdict(list)
+            for k, v in df.groupby('col'):
+                dic[k].extend(list(v['row'].values))
+            return dic
+
+        pdict = get_dict(pdf)
+        ndict = get_dict(ndf)
+        pdf = pd.DataFrame(pdict, columns=['user', 'prow'])
+        ndf = pd.DataFrame(ndict, columns=['user', 'nrow'])
+        return pd.merge(pdf, ndf, on="user")
+
+    @abstractmethod
+    def _get_pos_sample_index(self):
+        pass
+
+    @abstractmethod
+    def _get_neg_sample_index(self):
+        pass
+
+    def sample(self):
+        sample_pos_idx = self._get_pos_sample_index()
+        self.size = sample_pos_idx.shape[0]
+
+        pos_samples = self.pos[sample_pos_idx]
+        pos_samples.sort_indices()
+
+        if self.neg is not None:
+            sample_neg_idx = self._get_neg_sample_index()
+            neg_samples = self.neg[sample_neg_idx]
+            neg_samples.sort_indices()
+        else:
+            neg_samples = None
+        return pos_samples, neg_samples
+
+
+class NoSample(Sampler):
+
+    def __init__(self, pos, neg=None):
+        super(NoSample, self).__init__()
+        self.pos = pos
+        self.neg = neg
+        self.size, _ = self.pos.shape
+        self.indexes = self.get_index()
+
+    def _get_pos_sample_index(self):
+        return self.indexes['prow'].values
+
+    def _get_neg_sample_index(self):
+        return self.indexes['nrow'].values
+
+
+class RandomSampler(Sampler):
+
+    def __init__(self, pos, neg=None,
+                 frac=0.5, ntype=np.float32):
+        super(RandomSampler, self).__init__()
+        if neg is not None:
+            assert pos.shape == neg.shape, \
+                "positive and negative sample-sets" \
+                "must have the same dimensions"
+
+        self.pos = pos
+        self.neg = neg
+        self.ntype = ntype
+        n_samples, _ = pos.shape
+        self.size = int(n_samples * frac)
+        self.indexes = self.get_index()
+
+    def _get_sample_index(self):
+        self.sample_idx = self.indexes.sample(self.size)
+        return self.sample_idx['prow']
+
+    def _get_pos_sample_index(self):
+        return self.sample_idx['nrow']
+
+
+class UniformUserSampler(Sampler):
+
+    def __init__(self, pos, neg=None,
+                 frac=0.5, ntype=np.float32):
+        super(UniformUserSampler, self).__init__()
+        if neg is not None:
+            assert pos.shape == neg.shape, \
+                "positive and negative sample-sets" \
+                "must have the same dimensions"
+
+        self.pos = pos
+        self.neg = neg
+        self.ntype = ntype
+        self.frac = frac
+        self.indexes = self.get_index()
+
+    def _get_pos_sample_index(self):
+        self.sample_idx = self.indexes.groupby(by='user', as_index=False)\
+            .apply(lambda x: x.sample(frac=self.frac)).sample(frac=1)
+        return self.sample_idx['prow'].values
+
+    def _get_neg_sample_index(self):
+        return self.sample_idx['nrow'].values
+    
+
 class SimpleDataset(Dataset):
     """
     Attributes
@@ -204,95 +323,3 @@ class SimpleDataset(Dataset):
             fd[core.y] = y.astype(self.ntype)
 
         return fd
-
-
-class Sampler(ABC):
-
-    def __init__(self):
-        self.size = None
-        self.pos = None
-        self.neg = None
-
-    @abstractmethod
-    def _get_sample_index(self):
-        pass
-
-    def sample(self):
-        sample_idx = self._get_sample_index()
-        self.size = sample_idx.shape[0]
-
-        pos_samples = self.pos[sample_idx]
-        pos_samples.sort_indices()
-
-        if self.neg is not None:
-            neg_samples = self.neg[sample_idx]
-            neg_samples.sort_indices()
-        else:
-            neg_samples = None
-        return pos_samples, neg_samples
-
-
-class NoSample(Sampler):
-
-    def __init__(self, pos, neg=None):
-        super(NoSample, self).__init__()
-        self.pos = pos
-        self.neg = neg
-        self.size, _ = self.pos.shape
-
-    def _get_sample_index(self):
-        sample_idx = np.arange(self.size)
-        return sample_idx
-
-
-class RandomSampler(Sampler):
-
-    def __init__(self, pos, neg=None,
-                 frac=0.5, ntype=np.float32):
-        super(RandomSampler, self).__init__()
-        if neg is not None:
-            assert pos.shape == neg.shape, \
-                "positive and negative sample-sets" \
-                "must have the same dimensions"
-
-        self.pos = pos
-        self.neg = neg
-        self.ntype = ntype
-        n_samples, _ = pos.shape
-        self.idx = np.arange(n_samples)
-        self.size = int(n_samples * frac)
-
-    def _get_sample_index(self):
-        sample_idx = np.random.choice(self.idx, size=self.size)
-        return sample_idx
-
-
-class UniformUserSampler(Sampler):
-
-    def __init__(self, pos, neg=None,
-                 frac=0.5, ntype=np.float32):
-        super(UniformUserSampler, self).__init__()
-        if neg is not None:
-            assert pos.shape == neg.shape, \
-                "positive and negative sample-sets" \
-                "must have the same dimensions"
-
-        self.pos = pos
-        self.neg = neg
-        self.ntype = ntype
-        coo = pos.tocoo()
-        idx = pd.DataFrame()
-        idx['index'] = coo.row
-        idx['user'] = coo.col
-
-        idx = idx.groupby('index', as_index=False).min()
-        self.idx = idx
-        self.frac = frac
-
-    def _get_sample_index(self):
-        sample_idx = self.idx.groupby(by='user',
-                                      as_index=False) \
-            .apply(lambda x: x.sample(frac=self.frac))['index'].values
-        np.random.shuffle(sample_idx)
-        return sample_idx
-
