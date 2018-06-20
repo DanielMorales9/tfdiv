@@ -114,10 +114,8 @@ class Sampler(ABC):
 
     def get_index(self):
         poo = np.transpose(self.pos.nonzero())
-        noo = np.transpose(self.neg.nonzero())
+
         pdf = pd.DataFrame(poo, columns=['row', 'col']) \
-            .groupby('row', as_index=False).min()
-        ndf = pd.DataFrame(noo, columns=['row', 'col']) \
             .groupby('row', as_index=False).min()
 
         def get_dict(df):
@@ -127,10 +125,17 @@ class Sampler(ABC):
             return dic
 
         pdict = get_dict(pdf)
-        ndict = get_dict(ndf)
         pdf = pd.DataFrame(pdict, columns=['user', 'prow'])
-        ndf = pd.DataFrame(ndict, columns=['user', 'nrow'])
-        return pd.merge(pdf, ndf, on="user")
+        ind = pdf
+
+        if self.neg is None:
+            noo = np.transpose(self.neg.nonzero())
+            ndf = pd.DataFrame(noo, columns=['row', 'col']) \
+                .groupby('row', as_index=False).min()
+            ndict = get_dict(ndf)
+            ndf = pd.DataFrame(ndict, columns=['user', 'nrow'])
+            ind = pd.merge(pdf, ndf, on="user")
+        return ind
 
     @abstractmethod
     def _get_pos_sample_index(self):
@@ -220,7 +225,7 @@ class UniformUserSampler(Sampler):
 
     def _get_neg_sample_index(self):
         return self.sample_idx['nrow'].values
-    
+
 
 class SimpleDataset(Dataset):
     """
