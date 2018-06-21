@@ -2,7 +2,7 @@ from collections import defaultdict
 
 from scipy.sparse import isspmatrix_csr
 from abc import abstractmethod, ABC
-from tfdiv.utility import sparse_repr
+from tfdiv.utility import sparse_repr, cartesian_product
 import pandas as pd
 import numpy as np
 
@@ -58,7 +58,8 @@ class PairDataset(Dataset):
             raise TypeError("Unsupported Type: {}.\n"
                             "Use scipy.sparse.csr_matrix instead"
                             .format(type(pos)))
-
+        self.pos = pos
+        self.neg = neg
         self.ntype = ntype
         if bootstrap_sampling == 'random':
             self.sampler = RandomSampler(pos, neg,
@@ -83,16 +84,18 @@ class PairDataset(Dataset):
         return fd
 
     def get_next(self):
-        pos, neg = self.sampler.sample()
-        n_samples = self.sampler.size
-        batch_size = self._get_batch_size(n_samples)
 
-        for i in range(0, n_samples, batch_size):
-            upper_bound = min(i + batch_size, n_samples)
-            if neg is None:
-                yield pos[i:upper_bound]
+        for idx in self.sampler.sample(self.batch_size):
+            if self.neg is None:
+                pos = self.pos[idx]
+                pos.sort_indices()
+                yield pos
             else:
-                yield pos[i:upper_bound], neg[i:upper_bound]
+                pos = self.pos[idx[:, 0]]
+                pos.sort_indices()
+                neg = self.neg[idx[:, 1]]
+                neg.sort_indices()
+                yield pos, neg
 
     def _get_batch_size(self, n_samples):
         if self.batch_size == -1:
@@ -107,62 +110,63 @@ class PairDataset(Dataset):
 
 class Sampler(ABC):
 
-    def __init__(self):
+    def __init__(self, pos, neg):
         self.size = None
-        self.pos = None
-        self.neg = None
+        self.pos_idx, self.neg_idx = self.get_index(pos, neg)
 
-    def get_index(self):
-        poo = np.transpose(self.pos.nonzero())
-
+    @staticmethod
+    def get_index(pos, neg):
+        poo = np.transpose(pos.nonzero())
         pdf = pd.DataFrame(poo, columns=['prow', 'user']) \
             .groupby('prow', as_index=False).min()
-        ind = pdf
-        if self.neg is not None:
-            noo = np.transpose(self.neg.nonzero())
+        pos_idx = defaultdict(list)
+        for k, g in pdf.groupby('user', as_index=False):
+            pos_idx[k].extend(g['prow'])
+
+        neg_idx = None
+        if neg is not None:
+            noo = np.transpose(neg.nonzero())
             ndf = pd.DataFrame(noo, columns=['nrow', 'user']) \
                 .groupby('nrow', as_index=False).min()
-            ind = pd.merge(pdf, ndf, on="user")
-        return ind
+            neg_idx = defaultdict(list)
+            for k, g in ndf.groupby('user', as_index=False):
+                neg_idx[k].extend(g['nrow'])
+        return pos_idx, neg_idx
 
     @abstractmethod
-    def _get_pos_sample_index(self):
+    def sample(self, batch_size):
         pass
-
-    @abstractmethod
-    def _get_neg_sample_index(self):
-        pass
-
-    def sample(self):
-        sample_pos_idx = self._get_pos_sample_index()
-        self.size = sample_pos_idx.shape[0]
-
-        pos_samples = self.pos[sample_pos_idx]
-        pos_samples.sort_indices()
-
-        if self.neg is not None:
-            sample_neg_idx = self._get_neg_sample_index()
-            neg_samples = self.neg[sample_neg_idx]
-            neg_samples.sort_indices()
-        else:
-            neg_samples = None
-        return pos_samples, neg_samples
 
 
 class NoSample(Sampler):
 
     def __init__(self, pos, neg=None):
-        super(NoSample, self).__init__()
-        self.pos = pos
-        self.neg = neg
-        self.size, _ = self.pos.shape
-        self.indexes = self.get_index()
+        super(NoSample, self).__init__(pos, neg)
 
-    def _get_pos_sample_index(self):
-        return self.indexes['prow'].values
-
-    def _get_neg_sample_index(self):
-        return self.indexes['nrow'].values
+    def sample(self, batch_size):
+        head = None
+        for k in self.pos_idx.keys():
+            pos = self.pos_idx[k]
+            if self.neg_idx is not None:
+                neg = self.neg_idx[k]
+                idx = cartesian_product(pos, neg)
+            else:
+                idx = np.array(pos)
+            if head is not None:
+                idx = np.concatenate((head, idx))
+            if batch_size != -1:
+                for i in range(0, idx.shape[0], batch_size):
+                    upper_bound = min(i+batch_size, idx.shape[0])
+                    if idx[i:upper_bound].shape[0] < batch_size:
+                        head = idx[i:upper_bound]
+                        break
+                    else:
+                        yield idx[i:upper_bound]
+                        head = None
+            else:
+                head = head if head is not None else idx
+        if head is not None:
+            yield head
 
 
 class RandomSampler(Sampler):
