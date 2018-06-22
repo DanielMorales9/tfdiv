@@ -51,7 +51,7 @@ k = int(sys.argv[3])
 fm = BayesianPersonalizedRanking(epochs=epochs,
                                  n_threads=10,
                                  shuffle_size=10000,
-                                 bootstrap_sampling='random',
+                                 bootstrap_sampling='uniform_user',
                                  batch_size=batch_size, tol=1e-4,
                                  l2_w=0.01, l2_v=0.01, init_std=0.01)
 fm.fit(pos, neg)

@@ -175,7 +175,7 @@ class RandomSampler(Sampler):
     def __init__(self, pos, neg=None, shuffle_size=1000, n_threads=2):
         super(RandomSampler, self).__init__(pos, neg)
         self.shuffle_size = shuffle_size
-        self.n_thread = n_threads
+        self.n_threads = n_threads
 
     def sample(self, batch_size):
 
@@ -200,7 +200,7 @@ class RandomSampler(Sampler):
         users = np.array(list(self.pos_idx.keys()))
         np.random.shuffle(users)
 
-        batch_users = int(users.shape[0] / self.n_thread)
+        batch_users = int(users.shape[0] / self.n_threads)
         threads = []
         for i in range(0, users.shape[0], batch_users):
             upper_bound = min(i + batch_users, users.shape[0])
@@ -235,9 +235,59 @@ class UniformUserSampler(Sampler):
         super(UniformUserSampler, self).__init__(pos, neg)
         self.shuffle_size = shuffle_size
         self.n_threads = n_threads
+        self.frac = frac
 
     def sample(self, batch_size):
-        pass
+        def cartesian_shuffling(id, batch, q, shuffle_size, pos_idx, neg_idx):
+
+            for u in batch:
+                pos = pos_idx[u]
+                if neg_idx is not None:
+                    neg = neg_idx[u]
+                    idx = cartesian_product(pos, neg)
+                else:
+                    idx = np.array(pos)
+                if idx.shape[0] >= shuffle_size:
+                    rows_idx = np.arange(idx.shape[0])
+                    np.random.shuffle(rows_idx)
+                    idx = idx[rows_idx[0:int(self.frac*idx.shape[0])]]
+                    for i in range(0, idx.shape[0], shuffle_size):
+                        upper_bound = min(i + shuffle_size, idx.shape[0])
+                        q.put(idx[i:upper_bound])
+            q.put({'id': id})
+
+        q = Queue(maxsize=self.shuffle_size)
+
+        users = np.array(list(self.pos_idx.keys()))
+        np.random.shuffle(users)
+
+        batch_users = int(users.shape[0] / self.n_threads)
+        threads = []
+        for i in range(0, users.shape[0], batch_users):
+            upper_bound = min(i + batch_users, users.shape[0])
+            threads.append(Thread(target=cartesian_shuffling,
+                       args=(i, users[i:upper_bound], q, self.shuffle_size,
+                             self.pos_idx, self.neg_idx)))
+        for t in threads:
+            t.start()
+
+        final = None
+        ended_threads = set()
+        while True:
+            if len(ended_threads) == len(threads):
+                break
+            shuffled_batch = q.get()
+            if type(shuffled_batch) is dict:
+                ended_threads.add(shuffled_batch['id'])
+            elif batch_size != -1:
+                for i in range(0, shuffled_batch.shape[0], batch_size):
+                    upper_bound = min(i + batch_size, shuffled_batch.shape[0])
+                    yield shuffled_batch[i:upper_bound]
+            elif final is None:
+                final = shuffled_batch
+            else:
+                final = np.concatenate((final, shuffled_batch))
+
 
 class SimpleDataset(Dataset):
     """
