@@ -462,9 +462,7 @@ class LatentFactorPortfolioGraph(RankingGraph):
                                                          learning_rate=learning_rate,
                                                          optimizer=optimizer)
         self.variance = None
-        self.unique_x = None
         self.init_variance_vars = None
-        self.init_unique_vars = None
 
         self.delta_f = None
         self.predictions = None
@@ -622,48 +620,48 @@ class LatentFactorPortfolioGraph(RankingGraph):
                                                             init_nu,
                                                             init_sum_of_square])
 
-    def unique_rows_sparse_tensor(self):
-        n_users = self.n_users
-        n_items = self.n_items
-        max_allowed_features = n_users + n_items
-        less_cond = tf.less(self.x.indices[:, 1], max_allowed_features)
-        retained_x = tf.sparse_retain(self.x, less_cond)
-        retained_idx = retained_x.indices
-        tf_shape = tf.to_int64(tf.stack([tf.shape(self.x)[0], 4]))
-        re_idx = tf.reshape(retained_idx, tf_shape)
-        enc_ten = (re_idx[:, 1] + 1) * tf.reduce_max(re_idx[:, 3]) + re_idx[:, 3]
-        nq, idx = tf.unique(enc_ten)
-        num_partitions = tf.shape(nq)[0]
-        sparse_rows = tf.unsorted_segment_min(re_idx[:, 0], idx, num_partitions)
-
-        rng = tf.range(tf.shape(self.x.indices, out_type=tf.int64)[0])
-        max_rows = tf.segment_max(rng, self.x.indices[:, 0]) + 1
-        min_rows = tf.segment_min(rng, self.x.indices[:, 0])
-        min_max = tf.stack([min_rows, max_rows], axis=1)
-        ga = tf.gather(min_max, sparse_rows)
-        num_rows = tf.shape(ga)[0]
-        init_array = tf.TensorArray(tf.int64, size=num_rows, infer_shape=False)
-
-        def loop_body(i, ta):
-            return i + 1, ta.write(i, tf.range(ga[i, 0], ga[i, 1]))
-
-        _, result_array = tf.while_loop(lambda i, ta: i < num_rows,
-                                        loop_body, [0, init_array])
-        rows = result_array.concat()
-        trues = tf.ones(tf.shape(rows)[0], dtype=tf.bool)
-        mask = tf.zeros((tf.shape(self.x.indices)[0]), dtype=tf.bool)
-        init_mask = tf.Variable(mask, validate_shape=False, trainable=False)
-        new_mask = tf.scatter_update(init_mask, rows, trues)
-
-        new_x = tf.sparse_retain(self.x, new_mask)
-        unq, idx = tf.unique(new_x.indices[:, 0])
-        new_idx = tf.stack([tf.to_int64(idx), new_x.indices[:, 1]], axis=1)
-        new_shape = tf.stack([tf.shape(unq, out_type=tf.int64)[0],
-                              new_x.dense_shape[1]])
-        self.unique_x = tf.SparseTensor(indices=new_idx,
-                                        values=new_x.values,
-                                        dense_shape=new_shape)
-        self.init_unique_vars = tf.variables_initializer([init_mask])
+    # def unique_rows_sparse_tensor(self):
+    #     n_users = self.n_users
+    #     n_items = self.n_items
+    #     max_allowed_features = n_users + n_items
+    #     less_cond = tf.less(self.x.indices[:, 1], max_allowed_features)
+    #     retained_x = tf.sparse_retain(self.x, less_cond)
+    #     retained_idx = retained_x.indices
+    #     tf_shape = tf.to_int64(tf.stack([tf.shape(self.x)[0], 4]))
+    #     re_idx = tf.reshape(retained_idx, tf_shape)
+    #     enc_ten = (re_idx[:, 1] + 1) * tf.reduce_max(re_idx[:, 3]) + re_idx[:, 3]
+    #     nq, idx = tf.unique(enc_ten)
+    #     num_partitions = tf.shape(nq)[0]
+    #     sparse_rows = tf.unsorted_segment_min(re_idx[:, 0], idx, num_partitions)
+    #
+    #     rng = tf.range(tf.shape(self.x.indices, out_type=tf.int64)[0])
+    #     max_rows = tf.segment_max(rng, self.x.indices[:, 0]) + 1
+    #     min_rows = tf.segment_min(rng, self.x.indices[:, 0])
+    #     min_max = tf.stack([min_rows, max_rows], axis=1)
+    #     ga = tf.gather(min_max, sparse_rows)
+    #     num_rows = tf.shape(ga)[0]
+    #     init_array = tf.TensorArray(tf.int64, size=num_rows, infer_shape=False)
+    #
+    #     def loop_body(i, ta):
+    #         return i + 1, ta.write(i, tf.range(ga[i, 0], ga[i, 1]))
+    #
+    #     _, result_array = tf.while_loop(lambda i, ta: i < num_rows,
+    #                                     loop_body, [0, init_array])
+    #     rows = result_array.concat()
+    #     trues = tf.ones(tf.shape(rows)[0], dtype=tf.bool)
+    #     mask = tf.zeros((tf.shape(self.x.indices)[0]), dtype=tf.bool)
+    #     init_mask = tf.Variable(mask, validate_shape=False, trainable=False)
+    #     new_mask = tf.scatter_update(init_mask, rows, trues)
+    #
+    #     new_x = tf.sparse_retain(self.x, new_mask)
+    #     unq, idx = tf.unique(new_x.indices[:, 0])
+    #     new_idx = tf.stack([tf.to_int64(idx), new_x.indices[:, 1]], axis=1)
+    #     new_shape = tf.stack([tf.shape(unq, out_type=tf.int64)[0],
+    #                           new_x.dense_shape[1]])
+    #     self.unique_x = tf.SparseTensor(indices=new_idx,
+    #                                     values=new_x.values,
+    #                                     dense_shape=new_shape)
+    #     self.init_unique_vars = tf.variables_initializer([init_mask])
 
     def delta_f_computation(self):
         zero_x, users_x = self.reshape_dataset(self.n_users, self.rankings, self.x)

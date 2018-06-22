@@ -1299,7 +1299,7 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
     def fit(self, X, y, n_users, n_items):
         BayesianPersonalizedRanking.fit(self, X, y)
         del y
-        indices, values, shape = self.unique_sparse_input(X, n_users, n_items)
+        indices, values, shape = sparse_repr(X, self.ntype)
         self.compute_variance(indices, values, shape, n_users)
 
     def predict(self, X, n_users, n_items, k=10, b=0.0):

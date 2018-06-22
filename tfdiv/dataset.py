@@ -204,9 +204,12 @@ class RandomSampler(Sampler):
         threads = []
         for i in range(0, users.shape[0], batch_users):
             upper_bound = min(i + batch_users, users.shape[0])
-            threads.append(Thread(target=cartesian_shuffling,
+            t = Thread(target=cartesian_shuffling,
                        args=(i, users[i:upper_bound], q, self.shuffle_size,
-                             self.pos_idx, self.neg_idx)))
+                             self.pos_idx, self.neg_idx))
+            t.setDaemon(True)
+            threads.append(t)
+
         for t in threads:
             t.start()
 
@@ -265,9 +268,11 @@ class UniformUserSampler(Sampler):
         threads = []
         for i in range(0, users.shape[0], batch_users):
             upper_bound = min(i + batch_users, users.shape[0])
-            threads.append(Thread(target=cartesian_shuffling,
+            t = Thread(target=cartesian_shuffling,
                        args=(i, users[i:upper_bound], q, self.shuffle_size,
-                             self.pos_idx, self.neg_idx)))
+                             self.pos_idx, self.neg_idx))
+            t.setDaemon(True)
+            threads.append(t)
         for t in threads:
             t.start()
 
