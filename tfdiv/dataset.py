@@ -264,10 +264,10 @@ class UniformUserSampler(Sampler):
                 if head is not None:
                     idx = np.concatenate((head, idx))
                     head = None
+                rows_idx = np.arange(idx.shape[0])
+                np.random.shuffle(rows_idx)
+                idx = idx[rows_idx[0:int(self.frac * idx.shape[0])]]
                 if idx.shape[0] >= shuffle_size:
-                    rows_idx = np.arange(idx.shape[0])
-                    np.random.shuffle(rows_idx)
-                    idx = idx[rows_idx[0:int(self.frac*idx.shape[0])]]
                     for i in range(0, idx.shape[0], shuffle_size):
                         upper_bound = min(i + shuffle_size, idx.shape[0])
                         if upper_bound - i == shuffle_size:

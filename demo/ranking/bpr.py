@@ -45,7 +45,7 @@ pos.sort_indices()
 neg.sort_indices()
 
 epochs = int(sys.argv[1])
-batch_size = 10000
+batch_size = 100000
 k = int(sys.argv[3])
 
 import tensorflow as tf
@@ -56,7 +56,7 @@ config.inter_op_parallelism_threads = 2
 fm = BayesianPersonalizedRanking(epochs=epochs,
                                  n_threads=2,
                                  shuffle_size=1000000,
-                                 frac=0.7,
+                                 frac=0.5,
                                  bootstrap_sampling='uniform_user',
                                  batch_size=batch_size, tol=1e-4,
                                  l2_w=0.01, l2_v=0.01, init_std=0.01)
