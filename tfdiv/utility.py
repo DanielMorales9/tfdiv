@@ -85,6 +85,7 @@ def category_mapper(category):
         cat_map[i]
     return cat_map
 
+
 # ---- Tensorflow utility ----
 def tf_cartesian_product(a, b):
     tile_a = tf.tile(a, [b.get_shape()[0]])

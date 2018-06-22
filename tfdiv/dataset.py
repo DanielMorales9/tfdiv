@@ -180,7 +180,7 @@ class RandomSampler(Sampler):
     def sample(self, batch_size):
 
         def cartesian_shuffling(id, batch, q, shuffle_size, pos_idx, neg_idx):
-
+            head = None
             for u in batch:
                 pos = pos_idx[u]
                 if neg_idx is not None:
@@ -188,11 +188,21 @@ class RandomSampler(Sampler):
                     idx = cartesian_product(pos, neg)
                 else:
                     idx = np.array(pos)
+                if head is not None:
+                    idx = np.concatenate((head, idx))
+                    head = None
                 if idx.shape[0] >= shuffle_size:
                     np.random.shuffle(idx)
                     for i in range(0, idx.shape[0], shuffle_size):
                         upper_bound = min(i + shuffle_size, idx.shape[0])
-                        q.put(idx[i:upper_bound])
+                        if upper_bound - i == shuffle_size:
+                            q.put(idx[i:upper_bound])
+                        else:
+                            head = idx[i:upper_bound]
+                else:
+                    head = idx
+            if head is not None:
+                q.put(head)
             q.put({'id': id})
 
         q = Queue(maxsize=self.shuffle_size)
@@ -241,8 +251,9 @@ class UniformUserSampler(Sampler):
         self.frac = frac
 
     def sample(self, batch_size):
-        def cartesian_shuffling(id, batch, q, shuffle_size, pos_idx, neg_idx):
 
+        def cartesian_shuffling(id, batch, q, shuffle_size, pos_idx, neg_idx):
+            head = None
             for u in batch:
                 pos = pos_idx[u]
                 if neg_idx is not None:
@@ -250,13 +261,23 @@ class UniformUserSampler(Sampler):
                     idx = cartesian_product(pos, neg)
                 else:
                     idx = np.array(pos)
+                if head is not None:
+                    idx = np.concatenate((head, idx))
+                    head = None
                 if idx.shape[0] >= shuffle_size:
                     rows_idx = np.arange(idx.shape[0])
                     np.random.shuffle(rows_idx)
                     idx = idx[rows_idx[0:int(self.frac*idx.shape[0])]]
                     for i in range(0, idx.shape[0], shuffle_size):
                         upper_bound = min(i + shuffle_size, idx.shape[0])
-                        q.put(idx[i:upper_bound])
+                        if upper_bound - i == shuffle_size:
+                            q.put(idx[i:upper_bound])
+                        else:
+                            head = idx[i:upper_bound]
+                else:
+                    head = idx
+            if head is not None:
+                q.put(head)
             q.put({'id': id})
 
         q = Queue(maxsize=self.shuffle_size)

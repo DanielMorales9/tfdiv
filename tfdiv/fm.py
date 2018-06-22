@@ -738,7 +738,7 @@ class BayesianPersonalizedRanking(Ranking):
                  log_dir=None,
                  session_config=None,
                  n_threads=2,
-                 shuffle_size= 1000,
+                 shuffle_size=1000,
                  tol=None,
                  n_iter_no_change=10,
                  core=None):
