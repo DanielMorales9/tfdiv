@@ -737,6 +737,8 @@ class BayesianPersonalizedRanking(Ranking):
                  bootstrap_sampling='uniform_user',
                  log_dir=None,
                  session_config=None,
+                 n_threads=2,
+                 shuffle_size= 1000,
                  tol=None,
                  n_iter_no_change=10,
                  core=None):
@@ -758,6 +760,8 @@ class BayesianPersonalizedRanking(Ranking):
         self.learning_rate = learning_rate
         self.l2_w = l2_w
         self.l2_v = l2_v
+        self.shuffle_size = shuffle_size
+        self.n_threads = n_threads
         # Computational graph initialization
         self.core = core if core \
             else BPRGraph(n_factors=n_factors,
@@ -783,6 +787,8 @@ class BayesianPersonalizedRanking(Ranking):
         dataset = PairDataset(pos, neg=neg,
                               frac=self.frac,
                               ntype=self.ntype,
+                              shuffle_size=self.shuffle_size,
+                              n_threads=self.n_threads,
                               bootstrap_sampling=bootstrap_sampling) \
             .batch(self.batch_size)
         return dataset
@@ -1257,6 +1263,8 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                  log_dir=None,
                  session_config=None,
                  tol=None,
+                 shuffle_size=1000,
+                 n_threads=10,
                  n_iter_no_change=10,
                  core=None):
 
@@ -1267,7 +1275,8 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                                                   learning_rate=learning_rate,
                                                   l2_v=l2_v,
                                                   l2_w=l2_w)
-
+        self.shuffle_size = shuffle_size
+        self.n_threads = n_threads
         super(BayesianPersonalizedRankingLFP, self).__init__(epochs=epochs,
                                                              batch_size=batch_size,
                                                              frac=frac,
