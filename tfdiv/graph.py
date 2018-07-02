@@ -228,7 +228,7 @@ class PointwiseGraph(ComputationalGraph):
         pow_v = tf.pow(self.params, 2)
         sum_pow = tf.sparse_tensor_dense_matmul(pow_x, pow_v)
         sub = tf.subtract(pow_sum, sum_pow)
-        sum_sub = tf.reduce_sum(sub, 1, keepdims=True)
+        sum_sub = tf.reduce_sum(sub, 1, keep_dims=True)
         pair_interactions = tf.multiply(self.half, sum_sub)
         self.y_hat = tf.add(linear_terms, pair_interactions)
 
@@ -409,7 +409,7 @@ class BayesianPersonalizedRankingGraph(RankingGraph):
         pow_v = tf.pow(self.params, 2)
         sum_pow = tf.sparse_tensor_dense_matmul(pow_x, pow_v)
         sub = tf.subtract(pow_sum, sum_pow)
-        sum_sub = tf.reduce_sum(sub, 1, keepdims=True)
+        sum_sub = tf.reduce_sum(sub, 1, keep_dims=True)
         pair_interactions = tf.multiply(self.half, sum_sub)
         y_hat = tf.add(linear_terms, pair_interactions)
         return y_hat
