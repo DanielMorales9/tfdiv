@@ -24,6 +24,7 @@ class RankingScorer(_BaseScorer):
         self.k = k
 
         items = csr_unique_min_cols(item_catalogue)
+        self.n_users = min(items)
         c = count(0)
         self.item_map = defaultdict(c.__next__)
         for i in items:
@@ -39,6 +40,6 @@ class RankingScorer(_BaseScorer):
         n_users = users.shape[0]
         new_x = csr_cartesian_product(users, self.items)
         _, rank = estimator.predict(new_x, n_users, self.n_items, self.k)
-        rel_feed = relevance_feedback(n_users, self.n_items, X)
+        rel_feed = relevance_feedback(n_users, self.n_items, self.n_users, X)
         rs = ranked_relevance_feedback(rank, rel_feed)
         return self._sign * self._score_func(rs, **self._kwargs)

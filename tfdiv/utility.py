@@ -58,15 +58,19 @@ def csr_cartesian_product(users, items):
     return new_x
 
 
-def relevance_feedback(n_users, n_items, X):
+def relevance_feedback(n_users, tot_n_items, tot_users, X):
     ui = []
     for i in np.arange(X.shape[0]):
         ui.append(X.indices[X.indptr[i]:X.indptr[i + 1]][:2])
     ui = np.unique(ui, axis=1)
 
-    ui[:, 1] -= n_users
+    ui[:, 1] -= tot_users
+    c = count(0)
+    dic = defaultdict(c.__next__)
+    for i, u in enumerate(ui[:, 0]):
+        ui[i, 0] = dic[u]
 
-    rel = np.zeros((n_users, n_items), dtype=np.int32)
+    rel = np.zeros((n_users, tot_n_items), dtype=np.int32)
     rel[ui[:, 0], ui[:, 1]] = 1
     return rel
 
