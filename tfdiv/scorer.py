@@ -39,7 +39,6 @@ class RankingScorer(_BaseScorer):
         n_users = users.shape[0]
         new_x = csr_cartesian_product(users, self.items)
         _, rank = estimator.predict(new_x, n_users, self.n_items, self.k)
-        rel_feed = relevance_feedback(n_users, self.n_items, self.item_map, X)
+        rel_feed = relevance_feedback(n_users, self.n_items, X)
         rs = ranked_relevance_feedback(rank, rel_feed)
         return self._sign * self._score_func(rs, **self._kwargs)
-

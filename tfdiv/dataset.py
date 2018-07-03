@@ -82,7 +82,6 @@ class PairDataset(Dataset):
         return fd
 
     def get_next(self):
-
         for idx in self.sampler.sample(self.batch_size):
             if self.neg is None:
                 pos = self.pos[idx]
