@@ -8,7 +8,7 @@ import sys
 PATH = "~/PycharmProjects/DivMachines/data/ua.base"
 columns = ['user', 'item', 'rating', 'timestamp']
 
-train = pd.read_csv(PATH, delimiter='\t', names=columns)[columns[:-2]]
+train = pd.read_csv(PATH, delimiter='\t', names=columns).sample(10000)[columns[:-2]]
 
 n_users = train.user.unique().shape[0]
 n_items = train.item.unique().shape[0]
@@ -44,21 +44,21 @@ x.sort_indices()
 pos.sort_indices()
 neg.sort_indices()
 
-epochs = int(sys.argv[1])
+epochs = 100
 batch_size = 100000
-k = int(sys.argv[3])
+k = 10
 
 import tensorflow as tf
 config = tf.ConfigProto()
-config.intra_op_parallelism_threads = 2
-config.inter_op_parallelism_threads = 2
+config.intra_op_parallelism_threads = 10
+config.inter_op_parallelism_threads = 10
 
 fm = BayesianPersonalizedRanking(epochs=epochs,
-                                 n_threads=2,
-                                 shuffle_size=1000000,
                                  frac=0.5,
+                                 shuffle_size=10,
+                                 n_threads=10,
                                  bootstrap_sampling='uniform_user',
-                                 batch_size=batch_size, tol=1e-4,
+                                 batch_size=batch_size,
                                  l2_w=0.01, l2_v=0.01, init_std=0.01)
 fm.fit(pos, neg)
 
