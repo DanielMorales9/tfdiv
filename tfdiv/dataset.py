@@ -67,6 +67,8 @@ class PairDataset(Dataset):
                                               frac=frac,
                                               shuffle_size=shuffle_size,
                                               n_threads=n_threads)
+        elif bootstrap_sampling == 'no_sample':
+            self.sampler = NoSample(pos, neg)
         else:
             raise "Unsupported Bootstrap Sampling Type: {}. " \
                   "Please use Random or Uniform User." \
@@ -125,6 +127,24 @@ class Sampler(ABC):
     @abstractmethod
     def sample(self, batch_size):
         pass
+
+
+class NoSample(Sampler):
+
+    def __init__(self, pos, neg=None):
+        super(NoSample, self).__init__(pos, neg)
+
+    def sample(self, batch_size):
+        for u in self.pdf.user.unique():
+            pos = self.pdf.loc[self.pdf['user'] == u, 'prow'].values
+            if self.ndf is not None:
+                neg = self.ndf.loc[self.ndf['user'] == u, 'nrow'].values
+                idx = cartesian_product(pos, neg)
+            else:
+                idx = np.array(pos)
+            for i in range(0, idx.shape[0], batch_size):
+                upper_bound = min(i + batch_size, idx.shape[0])
+                yield idx[i:upper_bound]
 
 
 class UniformUserSampler(Sampler):

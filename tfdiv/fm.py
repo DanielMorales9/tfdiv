@@ -782,8 +782,7 @@ class BayesianPersonalizedRanking(Ranking):
             return pos, neg
         return pos
 
-    def init_dataset(self, pos, neg=None,
-                     bootstrap_sampling='no_sample'):
+    def init_dataset(self, pos, neg=None, bootstrap_sampling='no_sample'):
         dataset = PairDataset(pos, neg=neg,
                               frac=self.frac,
                               ntype=self.ntype,
