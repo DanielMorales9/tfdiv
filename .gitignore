@@ -158,3 +158,4 @@ fabric.properties
 demo/
 logs/**/*
 data
+tfdiv/scorer.py
