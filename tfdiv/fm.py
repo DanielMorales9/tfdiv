@@ -48,6 +48,7 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
                  tol=None,
                  n_factors=10,
                  n_iter_no_change=10):
+        self.train = None
         self.seed = seed
         self.graph = tf.Graph()
         self.graph.seed = self.seed
@@ -107,12 +108,32 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
                 self._best_loss = acc_loss
 
     def save_state(self, path):
-        # TODO: implement save API
-        pass
+        self.core.saver.save(self.session, path)
 
     def load_state(self, path):
-        # TODO: implement restore API
+        if self.graph is None:
+            self.initialize()
+        with self.graph.as_default():
+            self.core.define_graph()
+            self.train = True
+        self.core.saver.restore(self.session, path)
+
+    def initialize(self):
+        self.graph = tf.Graph()
+        self.graph.seed = self.seed
+        self.session = tf.Session(config=self.session_config,
+                                  graph=self.graph)
+        self.init_core(None)
+
+    @abstractmethod
+    def init_core(self, core):
         pass
+
+    def destroy(self):
+        """Terminates session and destroys graph."""
+        self.session.close()
+        self.session = None
+        self.graph = None
 
     def log_summary(self, summary, step):
         if self.log_writer is None and self.logging_enabled:
@@ -204,6 +225,9 @@ class Pointwise(BaseClassifier):
         self.l2_v = l2_v
         self.train = None
 
+        self.init_core(core)
+
+    def init_core(self, core):
         # Computational graph initialization
         self.core = core if core else PointwiseGraph(n_factors=self.n_factors,
                                                      init_std=self.init_std,
@@ -240,10 +264,8 @@ class Pointwise(BaseClassifier):
                 self.init_computational_graph()
         self.train = True
 
-        if not self.session.run(tf.is_variable_initialized(
-                self.core.global_step)):
-            self.session.run(self.core.init_all_vars,
-                             feed_dict={self.core.n_features: self.n_features})
+        if not self.session.run(tf.is_variable_initialized(self.core.global_step)):
+            self.session.run(self.core.init_all_vars, feed_dict={self.core.n_features: self.n_features})
 
         ops = self.core.ops
         for epoch in tqdm(range(self.epochs),
@@ -534,14 +556,15 @@ class RegressionRanking(Regression, Ranking):
                  n_iter_no_change=10,
                  core=None):
         # Computational graph initialization
-        self.core = core if core \
-            else PointwiseRankingGraph(n_factors=n_factors,
-                                       init_std=init_std,
-                                       dtype=dtype,
-                                       optimizer=optimizer,
-                                       learning_rate=learning_rate,
-                                       l2_v=l2_v,
-                                       l2_w=l2_w)
+        self.n_factors = n_factors
+        self.init_std = init_std
+        self.dtype = dtype
+        self.optimizer = optimizer
+        self.learning_rate = learning_rate
+        self.l2_v = l2_v
+        self.l2_w = l2_w
+
+        self.init_core(core)
 
         super(RegressionRanking, self).__init__(epochs=epochs,
                                                 batch_size=batch_size,
@@ -559,6 +582,16 @@ class RegressionRanking(Regression, Ranking):
                                                 session_config=session_config,
                                                 n_iter_no_change=n_iter_no_change,
                                                 tol=tol, core=self.core)
+
+    def init_core(self, core):
+        self.core = core if core \
+            else PointwiseRankingGraph(n_factors=self.n_factors,
+                                       init_std=self.init_std,
+                                       dtype=self.dtype,
+                                       optimizer=self.optimizer,
+                                       learning_rate=self.learning_rate,
+                                       l2_v=self.l2_v,
+                                       l2_w=self.l2_w)
 
     def predict(self, X, n_users, n_items, k=10):
         if self.train:
@@ -636,14 +669,14 @@ class ClassificationRanking(Classification, Ranking):
                  tol=None,
                  n_iter_no_change=10,
                  core=None):
-        self.core = core if core \
-            else PointwiseRankingGraph(n_factors=n_factors,
-                                       init_std=init_std,
-                                       dtype=dtype,
-                                       optimizer=optimizer,
-                                       learning_rate=learning_rate,
-                                       l2_v=l2_v,
-                                       l2_w=l2_w)
+        self.n_factors = n_factors
+        self.init_std = init_std
+        self.dtype = dtype
+        self.optimizer = optimizer
+        self.learning_rate = learning_rate
+        self.l2_v = l2_v
+        self.l2_w = l2_w
+        self.init_core(core)
 
         super(ClassificationRanking, self).__init__(epochs=epochs,
                                                     label_transform=label_transform,
@@ -662,6 +695,16 @@ class ClassificationRanking(Classification, Ranking):
                                                     n_iter_no_change=n_iter_no_change,
                                                     tol=tol,
                                                     core=self.core)
+
+    def init_core(self, core):
+        self.core = core if core \
+            else PointwiseRankingGraph(n_factors=self.n_factors,
+                                       init_std=self.init_std,
+                                       dtype=self.dtype,
+                                       optimizer=self.optimizer,
+                                       learning_rate=self.learning_rate,
+                                       l2_v=self.l2_v,
+                                       l2_w=self.l2_w)
 
     def decision_function(self, x):
         return x
@@ -763,14 +806,17 @@ class BayesianPersonalizedRanking(Ranking):
         self.shuffle_size = shuffle_size
         self.n_threads = n_threads
         # Computational graph initialization
+        self.init_core(core)
+
+    def init_core(self, core):
         self.core = core if core \
-            else BPRGraph(n_factors=n_factors,
-                          init_std=init_std,
-                          dtype=dtype,
-                          optimizer=optimizer,
-                          learning_rate=learning_rate,
-                          l2_v=l2_v,
-                          l2_w=l2_w)
+            else BPRGraph(n_factors=self.n_factors,
+                          init_std=self.init_std,
+                          dtype=self.dtype,
+                          optimizer=self.optimizer,
+                          learning_rate=self.learning_rate,
+                          l2_v=self.l2_v,
+                          l2_w=self.l2_w)
 
     def init_input(self, pos, neg=None):
         if not pos.has_sorted_indices:
@@ -1012,14 +1058,15 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
                  tol=None,
                  n_iter_no_change=10,
                  core=None):
-        self.core = core if core \
-            else PointwiseLFPGraph(n_factors=n_factors,
-                                   init_std=init_std,
-                                   dtype=dtype,
-                                   optimizer=optimizer,
-                                   learning_rate=learning_rate,
-                                   l2_v=l2_v,
-                                   l2_w=l2_w)
+
+        self.n_factors = n_factors
+        self.init_std = init_std
+        self.dtype = dtype
+        self.optimizer = optimizer
+        self.learning_rate = learning_rate
+        self.l2_v = l2_v
+        self.l2_w = l2_w
+        self.init_core(core)
 
         super(RegressionLFP, self).__init__(epochs=epochs,
                                             batch_size=batch_size,
@@ -1038,6 +1085,16 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
                                             n_iter_no_change=n_iter_no_change,
                                             tol=tol,
                                             core=self.core)
+
+    def init_core(self, core):
+        self.core = core if core \
+            else PointwiseLFPGraph(n_factors=self.n_factors,
+                                   init_std=self.init_std,
+                                   dtype=self.dtype,
+                                   optimizer=self.optimizer,
+                                   learning_rate=self.learning_rate,
+                                   l2_v=self.l2_v,
+                                   l2_w=self.l2_w)
 
     def delta_predict(self, k, b, n_users, pred, rank, X):
         with self.graph.as_default():
@@ -1138,14 +1195,15 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                  n_iter_no_change=10,
                  seed=1,
                  core=None):
-        self.core = core if core \
-            else PointwiseLFPGraph(n_factors=n_factors,
-                                   init_std=init_std,
-                                   dtype=dtype,
-                                   optimizer=optimizer,
-                                   learning_rate=learning_rate,
-                                   l2_v=l2_v,
-                                   l2_w=l2_w)
+
+        self.n_factors = n_factors
+        self.init_std = init_std
+        self.dtype = dtype
+        self.optimizer = optimizer
+        self.learning_rate = learning_rate
+        self.l2_v = l2_v
+        self.l2_w = l2_w
+        self.init_core(core)
         super(ClassificationLFP, self).__init__(epochs=epochs,
                                                 loss_function=loss_function,
                                                 label_transform=label_transform,
@@ -1164,6 +1222,16 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                                                 n_iter_no_change=n_iter_no_change,
                                                 tol=tol,
                                                 core=self.core)
+
+    def init_core(self, core):
+        self.core = core if core \
+            else PointwiseLFPGraph(n_factors=self.n_factors,
+                                   init_std=self.init_std,
+                                   dtype=self.dtype,
+                                   optimizer=self.optimizer,
+                                   learning_rate=self.learning_rate,
+                                   l2_v=self.l2_v,
+                                   l2_w=self.l2_w)
 
     def delta_predict(self, k, b, n_users, pred, rank, X):
         with self.graph.as_default():
@@ -1267,13 +1335,14 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                  n_iter_no_change=10,
                  core=None):
 
-        self.core = core if core else BPRLFPGraph(n_factors=n_factors,
-                                                  init_std=init_std,
-                                                  dtype=dtype,
-                                                  optimizer=optimizer,
-                                                  learning_rate=learning_rate,
-                                                  l2_v=l2_v,
-                                                  l2_w=l2_w)
+        self.n_factors = n_factors
+        self.init_std = init_std
+        self.dtype = dtype
+        self.optimizer = optimizer
+        self.learning_rate = learning_rate
+        self.l2_v = l2_v
+        self.l2_w = l2_w
+        self.init_core(core)
         self.shuffle_size = shuffle_size
         self.n_threads = n_threads
         super(BayesianPersonalizedRankingLFP, self).__init__(epochs=epochs,
@@ -1294,6 +1363,15 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                                                              n_iter_no_change=n_iter_no_change,
                                                              tol=tol,
                                                              core=self.core)
+    def init_core(self, core):
+        self.core = core if core \
+            else BPRLFPGraph(n_factors=self.n_factors,
+                             init_std=self.init_std,
+                             dtype=self.dtype,
+                             optimizer=self.optimizer,
+                             learning_rate=self.learning_rate,
+                             l2_v=self.l2_v,
+                             l2_w=self.l2_w)
 
     def fit(self, X, y, n_users, n_items):
         BayesianPersonalizedRanking.fit(self, X, y)

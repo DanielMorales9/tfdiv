@@ -68,6 +68,7 @@ class ComputationalGraph(ABC):
         self.ops = None
         self.x = None
         self.y = None
+        self.saver = None
 
     def define_graph(self):
         self.global_step = tf.train.get_or_create_global_step()
@@ -87,6 +88,7 @@ class ComputationalGraph(ABC):
         self.init_all_vars = tf.global_variables_initializer()
         self.summary_op = tf.summary.merge_all()
         self.fit_operations()
+        self.saver = tf.train.Saver()
 
     def init_params(self):
 
