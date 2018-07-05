@@ -153,8 +153,6 @@ The following modules are implemented:
 ### TODO
 1. Support for dense tensors.
 2. Arbitrary order factorization machine support
-3. Implement save and restore API.
-4. Generalizing Pairwise Learning-to-Ranking to enable customization
 
 ## References 
 

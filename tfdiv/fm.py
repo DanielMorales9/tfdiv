@@ -75,6 +75,18 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
         self.core = None
         self.n_features = None
 
+    @property
+    def intercept(self):
+        return self.session.run(self.core.bias)
+
+    @property
+    def weights(self):
+        return self.session.run(self.core.weights)
+
+    @property
+    def params(self):
+        return self.session.run(self.core.params)
+
     @abstractmethod
     def init_computational_graph(self, *args, **kwargs):
         pass
@@ -95,6 +107,10 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
     def predict(self, *args):
         pass
 
+    @abstractmethod
+    def init_core(self, core):
+        pass
+
     def score(self, X, y=None, sample_weight=None):
         pass
 
@@ -112,28 +128,23 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
 
     def load_state(self, path):
         if self.graph is None:
-            self.initialize()
+            self.init_session()
         with self.graph.as_default():
-            self.core.define_graph()
-            self.train = True
+            self.init_computational_graph()
         self.core.saver.restore(self.session, path)
-
-    def initialize(self):
-        self.graph = tf.Graph()
-        self.graph.seed = self.seed
-        self.session = tf.Session(config=self.session_config,
-                                  graph=self.graph)
-        self.init_core(None)
-
-    @abstractmethod
-    def init_core(self, core):
-        pass
 
     def destroy(self):
         """Terminates session and destroys graph."""
         self.session.close()
         self.session = None
         self.graph = None
+
+    def init_session(self):
+        self.graph = tf.Graph()
+        self.graph.seed = self.seed
+        self.session = tf.Session(config=self.session_config,
+                                  graph=self.graph)
+        self.init_core(None)
 
     def log_summary(self, summary, step):
         if self.log_writer is None and self.logging_enabled:
@@ -255,6 +266,7 @@ class Pointwise(BaseClassifier):
 
     def init_computational_graph(self):
         self.core.define_graph()
+        self.train = True
 
     def fit(self, X, y=None):
         with self.graph.as_default():
@@ -262,7 +274,6 @@ class Pointwise(BaseClassifier):
             dataset = self.init_dataset(x, y)
             if self.train is None:
                 self.init_computational_graph()
-        self.train = True
 
         if not self.session.run(tf.is_variable_initialized(self.core.global_step)):
             self.session.run(self.core.init_all_vars, feed_dict={self.core.n_features: self.n_features})
@@ -489,6 +500,10 @@ class Ranking(BaseClassifier):
     """
     Abstract Ranking Module.
     """
+    def init_computational_graph(self):
+        self.core.define_graph()
+        self.core.ranking_computation()
+        self.train = True
 
     def predict(self, X, n_users, n_items, k=10):
         raise NotImplementedError
@@ -593,11 +608,10 @@ class RegressionRanking(Regression, Ranking):
                                        l2_v=self.l2_v,
                                        l2_w=self.l2_w)
 
+    def init_computational_graph(self):
+        Ranking.init_computational_graph(self)
+
     def predict(self, X, n_users, n_items, k=10):
-        if self.train:
-            with self.graph.as_default():
-                self.core.ranking_computation()
-            self.train = False
         pred = Regression.predict(self, X)
         rank_res = self.session.run(self.core.ranking_results,
                                     feed_dict={self.core.pred: pred,
@@ -709,11 +723,10 @@ class ClassificationRanking(Classification, Ranking):
     def decision_function(self, x):
         return x
 
+    def init_computational_graph(self):
+        Ranking.init_computational_graph(self)
+
     def predict(self, X, n_users, n_items, k=10):
-        if self.train:
-            with self.graph.as_default():
-                self.core.ranking_computation()
-            self.train = False
         pred = Classification.predict(self, X)
         rank_res = self.session.run(self.core.ranking_results,
                                     feed_dict={self.core.pred: pred,
@@ -781,7 +794,7 @@ class BayesianPersonalizedRanking(Ranking):
                  log_dir=None,
                  session_config=None,
                  n_threads=2,
-                 shuffle_size=1000,
+                 shuffle_size=100,
                  tol=None,
                  n_iter_no_change=10,
                  core=None):
@@ -828,6 +841,7 @@ class BayesianPersonalizedRanking(Ranking):
             return pos, neg
         return pos
 
+
     def init_dataset(self, pos, neg=None, bootstrap_sampling='no_sample'):
         dataset = PairDataset(pos, neg=neg,
                               frac=self.frac,
@@ -839,14 +853,15 @@ class BayesianPersonalizedRanking(Ranking):
         return dataset
 
     def init_computational_graph(self):
-        self.core.define_graph()
+        Ranking.init_computational_graph(self)
 
     def fit(self, pos, neg, *args):
         with self.graph.as_default():
             pos, neg = self.init_input(pos, neg)
             n_samples = pos.shape[0]
             dataset = self.init_dataset(pos, neg, self.bootstrap_sampling)
-            self.init_computational_graph()
+            if self.train is None:
+                self.init_computational_graph()
 
         if not self.session.run(tf.is_variable_initialized(
                 self.core.global_step)):
@@ -869,8 +884,6 @@ class BayesianPersonalizedRanking(Ranking):
             if self._stopping and self._no_improvement > self.n_iter_no_change:
                 warnings.warn("Stopping at epoch: %s with loss %s" % (epoch, loss))
                 break
-        with self.graph.as_default():
-            self.core.ranking_computation()
 
     def predict(self, x, n_users, n_items, k=10):
         with self.graph.as_default():
@@ -940,30 +953,32 @@ class LatentFactorPortfolio(Ranking):
                                                     session_config=session_config,
                                                     n_iter_no_change=n_iter_no_change,
                                                     tol=tol)
-
     def fit(self, X, y, n_users, n_items):
         raise NotImplementedError
 
     def predict(self, X, n_users, n_items, k=10, b=0.0):
         raise NotImplementedError
 
-    def unique_sparse_input(self, x, n_users, n_items):
-        with self.graph.as_default():
-            with tf.name_scope(name='unique_sparse_tensor'):
-                self.core.unique_rows_sparse_tensor()
+    # def unique_sparse_input(self, x, n_users, n_items):
+    #     with self.graph.as_default():
+    #         with tf.name_scope(name='unique_sparse_tensor'):
+    #             self.core.unique_rows_sparse_tensor()
+    #
+    #     sparse_x = sparse_repr(x, self.ntype)
+    #     return self.session.run((self.core.init_unique_vars,
+    #                              self.core.unique_x),
+    #                             feed_dict={self.core.x: sparse_x,
+    #                                        self.core.n_users: n_users,
+    #                                        self.core.n_items: n_items})[1]
 
-        sparse_x = sparse_repr(x, self.ntype)
-        return self.session.run((self.core.init_unique_vars,
-                                 self.core.unique_x),
-                                feed_dict={self.core.x: sparse_x,
-                                           self.core.n_users: n_users,
-                                           self.core.n_items: n_items})[1]
+    def init_computational_graph(self):
+        self.core.define_graph()
+        self.core.ranking_computation()
+        self.core.variance_estimate()
+        self.core.delta_f_computation()
+        self.train = True
 
     def compute_variance(self, indices, values, shape, n_users):
-        with self.graph.as_default():
-            with tf.name_scope(name='variance_estimate'):
-                self.core.variance_estimate()
-
         self.session.run(self.core.init_variance_vars,
                          feed_dict={self.core.n_users: n_users})
         self.session.run(self.core.variance,
@@ -971,9 +986,6 @@ class LatentFactorPortfolio(Ranking):
                                     self.core.n_users: n_users})
 
     def delta_predict(self, k, b, n_users, pred, rank, X):
-        with self.graph.as_default():
-            with tf.name_scope(name='delta_f_computation'):
-                self.core.delta_f_computation()
         sparse_x = sparse_repr(X, self.ntype)
 
         def parametric_feed_dict(this, pred, rank, i):
@@ -986,8 +998,7 @@ class LatentFactorPortfolio(Ranking):
                 this.core.n_users: n_users,
             }
 
-        for i in tqdm(range(1, k),
-                      unit='k',
+        for i in tqdm(range(1, k), unit='k',
                       disable=not self.show_progress):
             delta_f = self.session.run(self.core.delta_f,
                                        feed_dict=parametric_feed_dict(self, pred, rank, i))
@@ -1097,10 +1108,6 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
                                    l2_w=self.l2_w)
 
     def delta_predict(self, k, b, n_users, pred, rank, X):
-        with self.graph.as_default():
-            with tf.name_scope(name='delta_f_computation'):
-                self.core.delta_f_computation()
-
         x, n_samples = self.init_input(X)
         dataset = SimpleDataset(x, ntype=self.ntype)
 
@@ -1122,6 +1129,9 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
                 matrix_swap_at_k(delta_arg_max, k, rank)
                 matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
+
+    def init_computational_graph(self):
+        LatentFactorPortfolio.init_computational_graph(self)
 
     def fit(self, X, y, n_users, n_items):
         RegressionRanking.fit(self, X, y)
@@ -1234,10 +1244,6 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                                    l2_w=self.l2_w)
 
     def delta_predict(self, k, b, n_users, pred, rank, X):
-        with self.graph.as_default():
-            with tf.name_scope(name='delta_f_computation'):
-                self.core.delta_f_computation()
-
         x, n_samples = self.init_input(X)
         dataset = SimpleDataset(x, ntype=self.ntype)
 
@@ -1259,6 +1265,9 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                 matrix_swap_at_k(delta_arg_max, k, rank)
                 matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
+
+    def init_computational_graph(self):
+        LatentFactorPortfolio.init_computational_graph(self)
 
     def fit(self, X, y, n_users, n_items):
         ClassificationRanking.fit(self, X, y)
@@ -1363,6 +1372,7 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                                                              n_iter_no_change=n_iter_no_change,
                                                              tol=tol,
                                                              core=self.core)
+
     def init_core(self, core):
         self.core = core if core \
             else BPRLFPGraph(n_factors=self.n_factors,
@@ -1373,9 +1383,11 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                              l2_v=self.l2_v,
                              l2_w=self.l2_w)
 
+    def init_computational_graph(self):
+        LatentFactorPortfolio.init_computational_graph(self)
+
     def fit(self, X, y, n_users, n_items):
         BayesianPersonalizedRanking.fit(self, X, y)
-        del y
         indices, values, shape = sparse_repr(X, self.ntype)
         self.compute_variance(indices, values, shape, n_users)
 

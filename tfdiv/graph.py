@@ -344,7 +344,7 @@ class PointwiseRankingGraph(PointwiseGraph, RankingGraph):
                                                     optimizer=optimizer)
 
     def init_placeholder(self):
-        super(PointwiseRankingGraph, self).init_placeholder()
+        PointwiseGraph.init_placeholder(self)
         self.y = tf.placeholder(shape=[None], name="y", dtype=self.dtype)
 
 
@@ -390,9 +390,6 @@ class BayesianPersonalizedRankingGraph(RankingGraph):
 
     def init_placeholder(self):
         RankingGraph.init_placeholder(self)
-        self.x = tf.sparse_placeholder(self.dtype,
-                                       shape=[None, self.n_features],
-                                       name='pos')
         self.y = tf.sparse_placeholder(self.dtype,
                                        shape=[None, self.n_features],
                                        name='neg')
@@ -617,6 +614,7 @@ class LatentFactorPortfolioGraph(RankingGraph):
         nu = tf.scatter_add(init_nu, indexes, ones)
         nu = tf.tile(tf.expand_dims(tf.to_float(nu), 1), [1, self.n_factors])
         computed_variance = sum_of_square / nu
+        # TODO the following assignment result in an operation rather than a variable
         self.variance = tf.assign(init_var, computed_variance)
         self.init_variance_vars = tf.variables_initializer([init_var,
                                                             init_nu,
@@ -699,4 +697,11 @@ class BPRLFPGraph(BayesianPersonalizedRankingGraph, LatentFactorPortfolioGraph):
 
     def init_placeholder(self):
         BayesianPersonalizedRankingGraph.init_placeholder(self)
-        LatentFactorPortfolioGraph.init_placeholder(self)
+        self.predictions = tf.placeholder(shape=[None, None],
+                                          dtype=self.dtype,
+                                          name='predictions')
+        self.rankings = tf.placeholder(shape=[None, None],
+                                       dtype=tf.int32,
+                                       name='rankings')
+        # System-level diversity
+        self.b = tf.placeholder(shape=[], dtype=self.dtype, name='b')
