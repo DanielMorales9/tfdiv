@@ -88,6 +88,8 @@ class ComputationalGraph(ABC):
         self.init_all_vars = tf.global_variables_initializer()
         self.summary_op = tf.summary.merge_all()
         self.fit_operations()
+
+    def init_saver(self):
         self.saver = tf.train.Saver()
 
     def init_params(self):
@@ -583,8 +585,8 @@ class LatentFactorPortfolioGraph(RankingGraph):
     def variance_estimate(self):
         # Variables and tensors initialization
         tf_shape = tf.stack([self.n_users, self.n_factors])
-        variance = tf.ones(tf_shape, dtype=self.dtype)
-        init_var = tf.Variable(variance, name='variance',
+        self.variance = tf.Variable(tf.zeros(tf_shape, dtype=self.dtype),
+                                    name='variance',
                                validate_shape=False,
                                trainable=False)
         init_sum_of_square = tf.Variable(tf.zeros(shape=tf_shape,
@@ -615,8 +617,8 @@ class LatentFactorPortfolioGraph(RankingGraph):
         nu = tf.tile(tf.expand_dims(tf.to_float(nu), 1), [1, self.n_factors])
         computed_variance = sum_of_square / nu
         # TODO the following assignment result in an operation rather than a variable
-        self.variance = tf.assign(init_var, computed_variance)
-        self.init_variance_vars = tf.variables_initializer([init_var,
+        self.variance_op = tf.assign(self.variance, computed_variance, validate_shape=False)
+        self.init_variance_vars = tf.variables_initializer([self.variance,
                                                             init_nu,
                                                             init_sum_of_square])
 

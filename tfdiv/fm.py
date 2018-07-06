@@ -266,6 +266,7 @@ class Pointwise(BaseClassifier):
 
     def init_computational_graph(self):
         self.core.define_graph()
+        self.core.init_saver()
         self.train = True
 
     def fit(self, X, y=None):
@@ -503,6 +504,7 @@ class Ranking(BaseClassifier):
     def init_computational_graph(self):
         self.core.define_graph()
         self.core.ranking_computation()
+        self.core.init_saver()
         self.train = True
 
     def predict(self, X, n_users, n_items, k=10):
@@ -953,6 +955,11 @@ class LatentFactorPortfolio(Ranking):
                                                     session_config=session_config,
                                                     n_iter_no_change=n_iter_no_change,
                                                     tol=tol)
+
+    @property
+    def variance(self):
+        return self.session.run(self.core.variance)
+
     def fit(self, X, y, n_users, n_items):
         raise NotImplementedError
 
@@ -976,13 +983,15 @@ class LatentFactorPortfolio(Ranking):
         self.core.ranking_computation()
         self.core.variance_estimate()
         self.core.delta_f_computation()
+        self.core.init_saver()
         self.train = True
 
     def compute_variance(self, indices, values, shape, n_users):
-        self.session.run(self.core.init_variance_vars,
-                         feed_dict={self.core.n_users: n_users})
-        self.session.run(self.core.variance,
-                         feed_dict={self.core.x: (indices, values, shape),
+        self.session.run((self.core.variance_op,
+                          self.core.init_variance_vars),
+                         feed_dict={self.core.x: (indices,
+                                                  values,
+                                                  shape),
                                     self.core.n_users: n_users})
 
     def delta_predict(self, k, b, n_users, pred, rank, X):
