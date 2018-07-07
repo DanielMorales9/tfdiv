@@ -989,8 +989,10 @@ class LatentFactorPortfolio(Ranking):
         self.train = True
 
     def compute_variance(self, indices, values, shape, n_users):
-        self.session.run((self.core.variance_op,
-                          self.core.init_variance_vars),
+        self.session.run(self.core.init_variance_vars, feed_dict={
+            self.core.n_users: n_users
+        })
+        self.session.run(self.core.variance_op,
                          feed_dict={self.core.x: (indices,
                                                   values,
                                                   shape),
@@ -1369,10 +1371,10 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
         self.learning_rate = learning_rate
         self.l2_v = l2_v
         self.l2_w = l2_w
-        self.init_core(core)
         self.shuffle_size = shuffle_size
         self.n_threads = n_threads
         self.opt_kwargs = opt_kwargs
+        self.init_core(core)
         super(BayesianPersonalizedRankingLFP, self).__init__(epochs=epochs,
                                                              batch_size=batch_size,
                                                              frac=frac,
