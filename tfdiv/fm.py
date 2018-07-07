@@ -211,6 +211,7 @@ class Pointwise(BaseClassifier):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
+                 opt_kwargs=None,
                  show_progress=True,
                  log_dir=None,
                  session_config=None,
@@ -234,6 +235,7 @@ class Pointwise(BaseClassifier):
         self.loss_function = loss_function
         self.l2_w = l2_w
         self.l2_v = l2_v
+        self.opt_kwargs = opt_kwargs
         self.train = None
 
         self.init_core(core)
@@ -243,6 +245,7 @@ class Pointwise(BaseClassifier):
         self.core = core if core else PointwiseGraph(n_factors=self.n_factors,
                                                      init_std=self.init_std,
                                                      dtype=self.dtype,
+                                                     opt_kwargs=self.opt_kwargs,
                                                      optimizer=self.optimizer,
                                                      learning_rate=self.learning_rate,
                                                      loss_function=self.loss_function,
@@ -375,6 +378,7 @@ class Regression(Pointwise):
                  optimizer=tf.train.AdamOptimizer,
                  show_progress=True,
                  log_dir=None,
+                 opt_kwargs=None,
                  session_config=None,
                  tol=None,
                  n_iter_no_change=10,
@@ -387,6 +391,7 @@ class Regression(Pointwise):
                                          init_std=init_std,
                                          l2_w=l2_w,
                                          l2_v=l2_v,
+                                         opt_kwargs=opt_kwargs,
                                          learning_rate=learning_rate,
                                          batch_size=batch_size,
                                          show_progress=show_progress,
@@ -463,6 +468,7 @@ class Classification(Pointwise):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
+                 opt_kwargs=None,
                  show_progress=True,
                  log_dir=None,
                  session_config=None,
@@ -477,6 +483,7 @@ class Classification(Pointwise):
                                              init_std=init_std,
                                              l2_w=l2_w,
                                              l2_v=l2_v,
+                                             opt_kwargs=opt_kwargs,
                                              learning_rate=learning_rate,
                                              batch_size=batch_size,
                                              show_progress=show_progress,
@@ -565,6 +572,7 @@ class RegressionRanking(Regression, Ranking):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
+                 opt_kwargs=None,
                  seed=1,
                  show_progress=True,
                  log_dir=None,
@@ -580,7 +588,7 @@ class RegressionRanking(Regression, Ranking):
         self.learning_rate = learning_rate
         self.l2_v = l2_v
         self.l2_w = l2_w
-
+        self.opt_kwargs=opt_kwargs
         self.init_core(core)
 
         super(RegressionRanking, self).__init__(epochs=epochs,
@@ -605,6 +613,7 @@ class RegressionRanking(Regression, Ranking):
             else PointwiseRankingGraph(n_factors=self.n_factors,
                                        init_std=self.init_std,
                                        dtype=self.dtype,
+                                       opt_kwargs=self.opt_kwargs,
                                        optimizer=self.optimizer,
                                        learning_rate=self.learning_rate,
                                        l2_v=self.l2_v,
@@ -678,6 +687,7 @@ class ClassificationRanking(Classification, Ranking):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
+                 opt_kwargs=None,
                  seed=1,
                  show_progress=True,
                  log_dir=None,
@@ -692,6 +702,7 @@ class ClassificationRanking(Classification, Ranking):
         self.learning_rate = learning_rate
         self.l2_v = l2_v
         self.l2_w = l2_w
+        self.opt_kwargs = opt_kwargs
         self.init_core(core)
 
         super(ClassificationRanking, self).__init__(epochs=epochs,
@@ -716,6 +727,7 @@ class ClassificationRanking(Classification, Ranking):
         self.core = core if core \
             else PointwiseRankingGraph(n_factors=self.n_factors,
                                        init_std=self.init_std,
+                                       opt_kwargs=self.opt_kwargs,
                                        dtype=self.dtype,
                                        optimizer=self.optimizer,
                                        learning_rate=self.learning_rate,
@@ -789,6 +801,7 @@ class BayesianPersonalizedRanking(Ranking):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
+                 opt_kwargs=None,
                  seed=1,
                  frac=0.5,
                  show_progress=True,
@@ -820,6 +833,7 @@ class BayesianPersonalizedRanking(Ranking):
         self.l2_v = l2_v
         self.shuffle_size = shuffle_size
         self.n_threads = n_threads
+        self.opt_kwargs = opt_kwargs
         # Computational graph initialization
         self.init_core(core)
 
@@ -827,6 +841,7 @@ class BayesianPersonalizedRanking(Ranking):
         self.core = core if core \
             else BPRGraph(n_factors=self.n_factors,
                           init_std=self.init_std,
+                          opt_kwargs=self.opt_kwargs,
                           dtype=self.dtype,
                           optimizer=self.optimizer,
                           learning_rate=self.learning_rate,
@@ -842,7 +857,6 @@ class BayesianPersonalizedRanking(Ranking):
             _, self.n_features = pos.shape
             return pos, neg
         return pos
-
 
     def init_dataset(self, pos, neg=None, bootstrap_sampling='no_sample'):
         dataset = PairDataset(pos, neg=neg,
@@ -966,18 +980,6 @@ class LatentFactorPortfolio(Ranking):
     def predict(self, X, n_users, n_items, k=10, b=0.0):
         raise NotImplementedError
 
-    # def unique_sparse_input(self, x, n_users, n_items):
-    #     with self.graph.as_default():
-    #         with tf.name_scope(name='unique_sparse_tensor'):
-    #             self.core.unique_rows_sparse_tensor()
-    #
-    #     sparse_x = sparse_repr(x, self.ntype)
-    #     return self.session.run((self.core.init_unique_vars,
-    #                              self.core.unique_x),
-    #                             feed_dict={self.core.x: sparse_x,
-    #                                        self.core.n_users: n_users,
-    #                                        self.core.n_items: n_items})[1]
-
     def init_computational_graph(self):
         self.core.define_graph()
         self.core.ranking_computation()
@@ -1071,6 +1073,7 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
+                 opt_kwargs=None,
                  seed=1,
                  show_progress=True,
                  log_dir=None,
@@ -1086,6 +1089,7 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
         self.learning_rate = learning_rate
         self.l2_v = l2_v
         self.l2_w = l2_w
+        self.opt_kwargs = opt_kwargs
         self.init_core(core)
 
         super(RegressionLFP, self).__init__(epochs=epochs,
@@ -1111,6 +1115,7 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
             else PointwiseLFPGraph(n_factors=self.n_factors,
                                    init_std=self.init_std,
                                    dtype=self.dtype,
+                                   opt_kwargs=self.opt_kwargs,
                                    optimizer=self.optimizer,
                                    learning_rate=self.learning_rate,
                                    l2_v=self.l2_v,
@@ -1207,6 +1212,7 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
+                 opt_kwargs=None,
                  show_progress=True,
                  log_dir=None,
                  session_config=None,
@@ -1222,6 +1228,7 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
         self.learning_rate = learning_rate
         self.l2_v = l2_v
         self.l2_w = l2_w
+        self.opt_kwargs = opt_kwargs
         self.init_core(core)
         super(ClassificationLFP, self).__init__(epochs=epochs,
                                                 loss_function=loss_function,
@@ -1246,6 +1253,7 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
         self.core = core if core \
             else PointwiseLFPGraph(n_factors=self.n_factors,
                                    init_std=self.init_std,
+                                   opt_kwargs=self.opt_kwargs,
                                    dtype=self.dtype,
                                    optimizer=self.optimizer,
                                    learning_rate=self.learning_rate,
@@ -1341,6 +1349,7 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                  l2_w=0.001,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
+                 opt_kwargs=None,
                  seed=1,
                  frac=0.5,
                  show_progress=True,
@@ -1363,6 +1372,7 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
         self.init_core(core)
         self.shuffle_size = shuffle_size
         self.n_threads = n_threads
+        self.opt_kwargs = opt_kwargs
         super(BayesianPersonalizedRankingLFP, self).__init__(epochs=epochs,
                                                              batch_size=batch_size,
                                                              frac=frac,
@@ -1387,6 +1397,7 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
             else BPRLFPGraph(n_factors=self.n_factors,
                              init_std=self.init_std,
                              dtype=self.dtype,
+                             opt_kwargs=self.opt_kwargs,
                              optimizer=self.optimizer,
                              learning_rate=self.learning_rate,
                              l2_v=self.l2_v,
