@@ -463,6 +463,7 @@ class LatentFactorPortfolioGraph(RankingGraph):
                                                          learning_rate=learning_rate,
                                                          optimizer=optimizer)
         self.variance = None
+        self.var = None
         self.init_variance_vars = None
 
         self.delta_f = None
@@ -500,19 +501,19 @@ class LatentFactorPortfolioGraph(RankingGraph):
         return reordered_x
 
     @staticmethod
-    def zero_users_columns(x, n_users, axis=1):
+    def zero_users_columns(x, tot_n_users, axis=1):
         assert axis > 0, "Axis must be greater then 0"
-        gte = tf.greater_equal(x.indices[:, axis], n_users)
-        lt = tf.less(x.indices[:, axis], n_users)
+        gte = tf.greater_equal(x.indices[:, axis], tot_n_users)
+        lt = tf.less(x.indices[:, axis], tot_n_users)
         new_x = tf.sparse_retain(x, gte)
         users_x = tf.sparse_retain(x, lt)
         return new_x, users_x
 
     @staticmethod
-    def reshape_dataset(n_users, rankings, x):
+    def reshape_dataset(n_users, tot_n_users, rankings, x):
         shaped_x = LatentFactorPortfolioGraph.shape_cube_by_rank(x, rankings)
         swapped_x = LatentFactorPortfolioGraph.swap_tensor_by_rank(shaped_x, rankings)
-        zeroed_x, users_x = LatentFactorPortfolioGraph.zero_users_columns(swapped_x, n_users, axis=2)
+        zeroed_x, users_x = LatentFactorPortfolioGraph.zero_users_columns(swapped_x, tot_n_users, axis=2)
         return zeroed_x, users_x
 
     @staticmethod
@@ -579,6 +580,7 @@ class LatentFactorPortfolioGraph(RankingGraph):
         self.rankings = tf.placeholder(shape=[None, None],
                                        dtype=tf.int32,
                                        name='rankings')
+
         # System-level diversity
         self.b = tf.placeholder(shape=[], dtype=self.dtype, name='b')
 
@@ -616,57 +618,15 @@ class LatentFactorPortfolioGraph(RankingGraph):
         nu = tf.scatter_add(init_nu, indexes, ones)
         nu = tf.tile(tf.expand_dims(tf.to_float(nu), 1), [1, self.n_factors])
         computed_variance = sum_of_square / nu
-        # TODO the following assignment result in an operation rather than a variable
         self.variance_op = tf.assign(self.variance, computed_variance, validate_shape=False)
         self.init_variance_vars = tf.variables_initializer([self.variance,
                                                             init_nu,
                                                             init_sum_of_square])
 
-    # def unique_rows_sparse_tensor(self):
-    #     n_users = self.n_users
-    #     n_items = self.n_items
-    #     max_allowed_features = n_users + n_items
-    #     less_cond = tf.less(self.x.indices[:, 1], max_allowed_features)
-    #     retained_x = tf.sparse_retain(self.x, less_cond)
-    #     retained_idx = retained_x.indices
-    #     tf_shape = tf.to_int64(tf.stack([tf.shape(self.x)[0], 4]))
-    #     re_idx = tf.reshape(retained_idx, tf_shape)
-    #     enc_ten = (re_idx[:, 1] + 1) * tf.reduce_max(re_idx[:, 3]) + re_idx[:, 3]
-    #     nq, idx = tf.unique(enc_ten)
-    #     num_partitions = tf.shape(nq)[0]
-    #     sparse_rows = tf.unsorted_segment_min(re_idx[:, 0], idx, num_partitions)
-    #
-    #     rng = tf.range(tf.shape(self.x.indices, out_type=tf.int64)[0])
-    #     max_rows = tf.segment_max(rng, self.x.indices[:, 0]) + 1
-    #     min_rows = tf.segment_min(rng, self.x.indices[:, 0])
-    #     min_max = tf.stack([min_rows, max_rows], axis=1)
-    #     ga = tf.gather(min_max, sparse_rows)
-    #     num_rows = tf.shape(ga)[0]
-    #     init_array = tf.TensorArray(tf.int64, size=num_rows, infer_shape=False)
-    #
-    #     def loop_body(i, ta):
-    #         return i + 1, ta.write(i, tf.range(ga[i, 0], ga[i, 1]))
-    #
-    #     _, result_array = tf.while_loop(lambda i, ta: i < num_rows,
-    #                                     loop_body, [0, init_array])
-    #     rows = result_array.concat()
-    #     trues = tf.ones(tf.shape(rows)[0], dtype=tf.bool)
-    #     mask = tf.zeros((tf.shape(self.x.indices)[0]), dtype=tf.bool)
-    #     init_mask = tf.Variable(mask, validate_shape=False, trainable=False)
-    #     new_mask = tf.scatter_update(init_mask, rows, trues)
-    #
-    #     new_x = tf.sparse_retain(self.x, new_mask)
-    #     unq, idx = tf.unique(new_x.indices[:, 0])
-    #     new_idx = tf.stack([tf.to_int64(idx), new_x.indices[:, 1]], axis=1)
-    #     new_shape = tf.stack([tf.shape(unq, out_type=tf.int64)[0],
-    #                           new_x.dense_shape[1]])
-    #     self.unique_x = tf.SparseTensor(indices=new_idx,
-    #                                     values=new_x.values,
-    #                                     dense_shape=new_shape)
-    #     self.init_unique_vars = tf.variables_initializer([init_mask])
-
     def delta_f_computation(self):
-        zero_x, users_x = self.reshape_dataset(self.n_users, self.rankings, self.x)
+        tot_n_users = tf.shape(self.variance, out_type=tf.int64)[0]
+        zero_x, users_x = self.reshape_dataset(self.n_users, tot_n_users,
+                                               self.rankings, self.x)
         users = users_x.indices[:, 2]
         user_var = self.variance_lookup(users, self.variance)
         self.pk = self.ranking_coefficient(self.k, self.dtype)

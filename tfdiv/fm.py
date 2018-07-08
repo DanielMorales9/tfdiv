@@ -993,30 +993,24 @@ class LatentFactorPortfolio(Ranking):
             self.core.n_users: n_users
         })
         self.session.run(self.core.variance_op,
-                         feed_dict={self.core.x: (indices,
-                                                  values,
-                                                  shape),
+                         feed_dict={self.core.x: (indices, values, shape),
                                     self.core.n_users: n_users})
 
     def delta_predict(self, k, b, n_users, pred, rank, X):
-        sparse_x = sparse_repr(X, self.ntype)
-
-        def parametric_feed_dict(this, pred, rank, i):
-            return {
-                this.core.x: sparse_x,
-                this.core.predictions: pred,
-                this.core.rankings: rank,
-                this.core.k: i,
-                this.core.b: b,
-                this.core.n_users: n_users,
-            }
-
-        for i in tqdm(range(1, k), unit='k',
+        core = self.core
+        for i in tqdm(range(1, k),
+                      unit='k',
                       disable=not self.show_progress):
+            fd = {core.x: sparse_repr(X, self.ntype),
+                  core.predictions: pred,
+                  core.rankings: rank,
+                  core.k: i, core.b: b,
+                  core.n_users: n_users}
             delta_f = self.session.run(self.core.delta_f,
-                                       feed_dict=parametric_feed_dict(self, pred, rank, i))
+                                       feed_dict=fd)
             delta_arg_max = np.argmax(delta_f, axis=1)
             matrix_swap_at_k(delta_arg_max, k, pred)
+            matrix_swap_at_k(delta_arg_max, k, rank)
             matrix_swap_at_k(delta_arg_max, k, rank)
         return rank[:, :k]
 
@@ -1122,29 +1116,6 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
                                    learning_rate=self.learning_rate,
                                    l2_v=self.l2_v,
                                    l2_w=self.l2_w)
-
-    def delta_predict(self, k, b, n_users, pred, rank, X):
-        x, n_samples = self.init_input(X)
-        dataset = SimpleDataset(x, ntype=self.ntype)
-
-        core = self.core
-        for i in tqdm(range(1, k),
-                      unit='k',
-                      disable=not self.show_progress):
-            for x in dataset.get_next():
-                fd = dataset.batch_to_feed_dict(x, core=core)
-                fd[core.predictions] = pred
-                fd[core.rankings] = rank
-                fd[core.k] = i
-                fd[core.b] = b
-                fd[core.n_users] = n_users
-                delta_f = self.session.run(self.core.delta_f,
-                                           feed_dict=fd)
-                delta_arg_max = np.argmax(delta_f, axis=1)
-                matrix_swap_at_k(delta_arg_max, k, pred)
-                matrix_swap_at_k(delta_arg_max, k, rank)
-                matrix_swap_at_k(delta_arg_max, k, rank)
-        return rank[:, :k]
 
     def init_computational_graph(self):
         LatentFactorPortfolio.init_computational_graph(self)
@@ -1261,29 +1232,6 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                                    learning_rate=self.learning_rate,
                                    l2_v=self.l2_v,
                                    l2_w=self.l2_w)
-
-    def delta_predict(self, k, b, n_users, pred, rank, X):
-        x, n_samples = self.init_input(X)
-        dataset = SimpleDataset(x, ntype=self.ntype)
-
-        core = self.core
-        for i in tqdm(range(1, k),
-                      unit='k',
-                      disable=not self.show_progress):
-            for x in dataset.get_next():
-                fd = dataset.batch_to_feed_dict(x, core=core)
-                fd[core.predictions] = pred
-                fd[core.rankings] = rank
-                fd[core.k] = i
-                fd[core.b] = b
-                fd[core.n_users] = n_users
-                delta_f = self.session.run(self.core.delta_f,
-                                           feed_dict=fd)
-                delta_arg_max = np.argmax(delta_f, axis=1)
-                matrix_swap_at_k(delta_arg_max, k, pred)
-                matrix_swap_at_k(delta_arg_max, k, rank)
-                matrix_swap_at_k(delta_arg_max, k, rank)
-        return rank[:, :k]
 
     def init_computational_graph(self):
         LatentFactorPortfolio.init_computational_graph(self)
