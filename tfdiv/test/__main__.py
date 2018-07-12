@@ -1,4 +1,4 @@
-from ..graph import PointwiseGraph, PointwiseLFPGraph as PointLFP, BPRLFPGraph
+from ..graph import PointwiseGraph, PointwiseLFPGraph as PointLFP, BPRLFPGraph, LatentFactorPortfolioGraph
 from sklearn.preprocessing import OneHotEncoder
 from tfdiv.utility import sparse_repr
 from unittest.case import TestCase
@@ -13,15 +13,13 @@ class TestPointwiseGraph(TestCase):
     def setUp(self):
         self.graph = PointwiseGraph()
 
-        indices = tf.convert_to_tensor(np.array([[0, 0], [1, 1]]), dtype=tf.int64)
-        values = tf.convert_to_tensor(np.array([1, 1]), dtype=tf.float32)
-        dense_shape = tf.convert_to_tensor([2, 2], dtype=tf.int64)
+        indices = np.array([[0, 0], [1, 1]], dtype=np.int64)
+        values = np.array([1, 1], dtype=np.float32)
+        dense_shape = np.array([2, 2], dtype=np.int64)
         self.n_features = 2
 
-        self.x = tf.SparseTensor(indices=indices,
-                                 values=values,
-                                 dense_shape=dense_shape)
-        self.y = tf.convert_to_tensor([1, 1])
+        self.x = (indices, values, dense_shape)
+        self.y = [1, 1]
 
         self.bias = tf.verify_tensor_all_finite(
             tf.Variable(0.0,
@@ -43,27 +41,21 @@ class TestPointwiseGraph(TestCase):
                         trainable=True,
                         name='params', dtype=tf.float32),
             msg='NaN or Inf in parameters')
-
-        self.graph.set_params(**{'x': self.x,
-                                 'y': self.y,
-                                 'bias': self.bias,
+        self.graph.set_params(**{'bias': self.bias,
                                  'weights': self.weights,
-                                 'params': self.params
+                                 'params': self.params,
                                  })
         self.graph.define_graph()
-
-    def test_set_params(self):
-        self.assertEqual(self.graph.x, self.x)
-        self.assertEqual(self.graph.y, self.y)
 
     def test_predictions(self):
         with tf.Session() as sess:
             sess.run(self.graph.init_all_vars,
                      feed_dict={self.graph.n_features: self.n_features})
             predictions = sess.run(self.graph.y_hat,
-                                   feed_dict={self.graph.n_features:
-                                                  self.n_features})
+                                   feed_dict={self.graph.x: self.x,
+                                              self.graph.y: self.y})
         expected = np.array([[0], [1]])
+
         self.assertTrue(np.all(expected == predictions))
 
     def tearDown(self):
@@ -105,10 +97,7 @@ class TestPointwiseLFPGraph(TestCase):
 
         self.graph.set_params(**{'bias': self.bias,
                                  'weights': self.weights,
-                                 'params': self.params,
-                                 'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')
+                                 'params': self.params
                                  })
         self.graph.define_graph()
         with tf.Session() as sess:
@@ -135,15 +124,13 @@ class TestPointwiseLFPGraph(TestCase):
         indices, values, shape = sparse_repr(new_x, np.float32)
         n_features = 5
         params = np.repeat(np.arange(n_features), 10).reshape((5, 10))
+        print(params)
         params = tf.convert_to_tensor(params, dtype=tf.float32)
         params = tf.verify_tensor_all_finite(tf.Variable(params,
                                                          trainable=True,
                                                          name='params', dtype=tf.float32),
                                              msg='NaN or Inf in parameters')
-        self.graph.set_params(**{'params': params,
-                                 'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')})
+        self.graph.set_params(**{'params': params})
         self.graph.define_graph()
         self.graph.variance_estimate()
 
@@ -152,10 +139,11 @@ class TestPointwiseLFPGraph(TestCase):
                   self.graph.init_all_vars),
                  feed_dict={self.graph.n_users: n_users,
                             self.graph.n_features: n_features})
-        actual_var = sess.run(self.graph.variance,
-                              feed_dict={self.graph.x: (indices, values, shape),
-                                         self.graph.n_users: n_users})
+        sess.run(self.graph.variance_op,
+                 feed_dict={self.graph.x: (indices, values, shape),
+                            self.graph.n_users: n_users})
 
+        actual_var = sess.run(self.graph.variance)
         self.assertEqual(actual_var.shape, (3, 10))
         expected_var = np.repeat(np.array([12.5, 6.5, 2.5],
                                           dtype=np.float32), 10) \
@@ -180,10 +168,7 @@ class TestPointwiseLFPGraph(TestCase):
                                                          trainable=True,
                                                          name='params', dtype=tf.float32),
                                              msg='NaN or Inf in parameters')
-        self.graph.set_params(**{'params': params,
-                                 'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')})
+        self.graph.set_params(**{'params': params})
         self.graph.define_graph()
         self.graph.variance_estimate()
 
@@ -192,11 +177,13 @@ class TestPointwiseLFPGraph(TestCase):
                   self.graph.init_all_vars),
                  feed_dict={self.graph.n_users: n_users,
                             self.graph.n_features: n_features})
-        actual_var = sess.run(self.graph.variance,
-                              feed_dict={self.graph.x: (indices, values, shape),
-                                         self.graph.y: np.array([0, 1, 0, 1, 0, 1],
-                                                                dtype=np.float32),
-                                         self.graph.n_users: n_users})
+        sess.run(self.graph.variance_op,
+                 feed_dict={self.graph.x: (indices, values, shape),
+                            self.graph.y: np.array([0, 1, 0, 1, 0, 1],
+                                                   dtype=np.float32),
+                            self.graph.n_users: n_users})
+
+        actual_var = sess.run(self.graph.variance)
 
         self.assertEqual(actual_var.shape, (3, 10))
         expected_var = np.repeat(np.array([12.5, 4, 2.5],
@@ -225,10 +212,7 @@ class TestPointwiseLFPGraph(TestCase):
                                                          name='params',
                                                          dtype=tf.float32),
                                              msg='NaN or Inf in parameters')
-        self.graph.set_params(**{'params': params,
-                                 'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')})
+        self.graph.set_params(**{'params': params})
         self.graph.define_graph()
         self.graph.variance_estimate()
 
@@ -237,11 +221,13 @@ class TestPointwiseLFPGraph(TestCase):
                   self.graph.init_all_vars),
                  feed_dict={self.graph.n_users: n_users,
                             self.graph.n_features: n_features})
-        actual_var = sess.run(self.graph.variance,
-                              feed_dict={self.graph.x: (indices, values, shape),
-                                         self.graph.y: np.array([0, 1, 0, 1, 0, 1],
-                                                                dtype=np.float32),
-                                         self.graph.n_users: n_users})
+        sess.run(self.graph.variance_op,
+                 feed_dict={self.graph.x: (indices, values, shape),
+                            self.graph.y: np.array([0, 1, 0, 1, 0, 1],
+                                                   dtype=np.float32),
+                            self.graph.n_users: n_users})
+
+        actual_var = sess.run(self.graph.variance)
 
         self.assertEqual(actual_var.shape, (3, 10))
         expected_var = np.repeat(np.array([12.5, 6.5, 2.5],
@@ -260,13 +246,13 @@ class TestPointwiseLFPGraph(TestCase):
         sess.run(self.graph.init_variance_vars, feed_dict={
             self.graph.n_users: n_users
         })
-        actual_var = sess.run(self.graph.variance,
-                              feed_dict={self.graph.x: (indices, values, shape),
-                                         self.graph.y: np.array([0, 1, 0, 1, 0, 1],
-                                                                dtype=np.float32),
+        sess.run(self.graph.variance_op,
+                 feed_dict={self.graph.x: (indices, values, shape),
+                            self.graph.y: np.array([0, 1, 0, 1, 0, 1],
+                                                   dtype=np.float32),
 
-                                         self.graph.n_users: n_users})
-
+                            self.graph.n_users: n_users})
+        actual_var = sess.run(self.graph.variance)
         self.assertEqual(actual_var.shape, (3, 10))
         expected_var = np.repeat(np.array([12.5, 4, 2.5],
                                           dtype=np.float32), 10) \
@@ -312,13 +298,7 @@ class TestPointwiseLFPGraph(TestCase):
 
         self.graph.set_params(**{'bias': self.bias,
                                  'weights': self.weights,
-                                 'params': self.params,
-                                 'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None],
-                                                     dtype=tf.float32,
-                                                     name='y')
-                                 })
+                                 'params': self.params})
         self.graph.define_graph()
         y = np.array([0, 1, 0, 1, 0, 1],
                      dtype=np.float32)
@@ -388,9 +368,6 @@ class TestPointwiseLFPGraph(TestCase):
         self.graph.set_params(**{'bias': self.bias,
                                  'weights': self.weights,
                                  'params': self.params,
-                                 'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')
                                  })
         self.graph.define_graph()
 
@@ -470,9 +447,6 @@ class TestPointwiseLFPGraph(TestCase):
         self.graph.set_params(**{'bias': self.bias,
                                  'weights': self.weights,
                                  'params': self.params,
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y'),
-                                 'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x')
                                  })
         self.graph.define_graph()
         self.graph.variance_estimate()
@@ -491,11 +465,12 @@ class TestPointwiseLFPGraph(TestCase):
 
         ranking = np.array([[2, 1, 0], [2, 1, 0]], dtype=np.int32)
 
-        variance = sess.run(self.graph.variance,
-                            feed_dict={self.graph.x: sparse_x,
-                                       self.graph.n_users: n_users,
-                                       # self.graph.rankings: ranking}
-                                       })
+        sess.run(self.graph.variance_op,
+                 feed_dict={self.graph.x: sparse_x,
+                            self.graph.n_users: n_users,
+                            # self.graph.rankings: ranking}
+                            })
+        variance = sess.run(self.graph.variance)
         expected_variance = np.repeat(np.array([29 / 3, 14 / 3],
                                                dtype=np.float32), 10) \
             .reshape(n_users, 10)
@@ -512,7 +487,6 @@ class TestPointwiseLFPGraph(TestCase):
         self.assertTrue(np.all(user_var == expected_user_var))
 
     def test_ranking_coefficient(self):
-        n_features = 5
         # cartesian product of users and items
         x = np.array([[100, 200],
                       [100, 201],
@@ -525,10 +499,6 @@ class TestPointwiseLFPGraph(TestCase):
         new_x.sort_indices()
         sparse_x = sparse_repr(new_x, np.float32)
 
-        self.graph.set_params(**{
-            'x': tf.sparse_placeholder(shape=[None, n_features],
-                                       dtype=tf.float32, name='x'),
-            'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')})
         self.graph.define_graph()
         pk = PointLFP.ranking_coefficient(self.graph.k)
 
@@ -580,10 +550,7 @@ class TestPointwiseLFPGraph(TestCase):
 
         self.graph.set_params(**{'bias': bias,
                                  'weights': weights,
-                                 'params': params,
-                                 'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')})
+                                 'params': params})
         self.graph.define_graph()
         zeroed_x, _ = self.graph.reshape_dataset(self.graph.n_users,
                                                  self.graph.rankings,
@@ -839,77 +806,6 @@ class TestPointwiseLFPGraph(TestCase):
 
         self.assertTrue(np.allclose(d, expected))
 
-    def test_unique_sparse_tensor(self):
-        n_users = 2
-        n_items = 3
-        x = np.array([[100, 200],
-                      [100, 201],
-                      [100, 202],
-                      [100, 200],
-                      [101, 200],
-                      [101, 201],
-                      [101, 202]])
-        enc = OneHotEncoder(dtype=np.float32)
-        new_x = enc.fit(x).transform(x).tocsr()
-        new_x.sort_indices()
-        sparse_x = sparse_repr(new_x, np.float32)
-        self.graph.set_params(**{'x': tf.sparse_placeholder(shape=[None, 5],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')})
-        self.graph.define_graph()
-        self.graph.unique_rows_sparse_tensor()
-
-        sess = tf.Session()
-        actual = sess.run((self.graph.init_unique_vars,
-                           tf.sparse_tensor_to_dense(self.graph.unique_x)),
-                          feed_dict={self.graph.x: sparse_x,
-                                     self.graph.n_features: n_users + n_items,
-                                     self.graph.n_users: n_users,
-                                     self.graph.n_items: n_items})[1]
-        expected = np.array([[1, 0, 1, 0, 0],
-                             [1, 0, 0, 1, 0],
-                             [1, 0, 0, 0, 1],
-                             [0, 1, 1, 0, 0],
-                             [0, 1, 0, 1, 0],
-                             [0, 1, 0, 0, 1]])
-        self.assertTrue(np.all(actual == expected))
-
-    def test_unique_sparse_tensor_multi(self):
-        n_users = 2
-        n_items = 3
-        n_features = 7
-        x = np.array([[100, 200, 300],
-                      [100, 201, 300],
-                      [100, 202, 301],
-                      [100, 200, 300],
-                      [101, 200, 300],
-                      [101, 201, 300],
-                      [101, 202, 301]])
-        enc = OneHotEncoder(dtype=np.float32)
-        new_x = enc.fit(x).transform(x).tocsr()
-        new_x.sort_indices()
-        sparse_x = sparse_repr(new_x, np.float32)
-        self.graph.set_params(**{'x': tf.sparse_placeholder(shape=[None, n_features],
-                                                            dtype=tf.float32, name='x'),
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')})
-        self.graph.define_graph()
-        self.graph.unique_rows_sparse_tensor()
-
-        sess = tf.Session()
-        actual = sess.run((self.graph.init_unique_vars,
-                           tf.sparse_tensor_to_dense(self.graph.unique_x)),
-                          feed_dict={self.graph.x: sparse_x,
-                                     self.graph.n_features: n_features,
-                                     self.graph.n_users: n_users,
-                                     self.graph.n_items: n_items})[1]
-        expected = np.array([[1, 0, 1, 0, 0, 1, 0],
-                             [1, 0, 0, 1, 0, 1, 0],
-                             [1, 0, 0, 0, 1, 0, 1],
-                             [0, 1, 1, 0, 0, 1, 0],
-                             [0, 1, 0, 1, 0, 1, 0],
-                             [0, 1, 0, 0, 1, 0, 1]])
-        self.assertTrue(np.all(actual == expected))
-
     def tearDown(self):
         tf.reset_default_graph()
 
@@ -988,7 +884,7 @@ class TestBayesianLFPGraph(TestCase):
                   self.graph.init_all_vars),
                  feed_dict={self.graph.n_users: n_users,
                             self.graph.n_features: n_features})
-        actual_var = sess.run(self.graph.variance,
+        actual_var = sess.run(self.graph.variance_op,
                               feed_dict={self.graph.x: (indices, values, shape),
                                          self.graph.n_users: n_users})
 
@@ -1025,7 +921,7 @@ class TestBayesianLFPGraph(TestCase):
                   self.graph.init_all_vars),
                  feed_dict={self.graph.n_users: n_users,
                             self.graph.n_features: n_features})
-        actual_var = sess.run(self.graph.variance,
+        actual_var = sess.run(self.graph.variance_op,
                               feed_dict={self.graph.x: (indices, values, shape),
                                          self.graph.n_users: n_users})
 
@@ -1065,7 +961,7 @@ class TestBayesianLFPGraph(TestCase):
                   self.graph.init_all_vars),
                  feed_dict={self.graph.n_users: n_users,
                             self.graph.n_features: n_features})
-        actual_var = sess.run(self.graph.variance,
+        actual_var = sess.run(self.graph.variance_op,
                               feed_dict={self.graph.x: (indices, values, shape),
                                          self.graph.n_users: n_users})
 
@@ -1086,10 +982,9 @@ class TestBayesianLFPGraph(TestCase):
         sess.run(self.graph.init_variance_vars, feed_dict={
             self.graph.n_users: n_users
         })
-        actual_var = sess.run(self.graph.variance,
+        actual_var = sess.run(self.graph.variance_op,
                               feed_dict={self.graph.x: (indices, values, shape),
                                          self.graph.n_users: n_users})
-
         self.assertEqual(actual_var.shape, (3, 10))
         expected_var = np.repeat(np.array([12.5, 4, 2.5],
                                           dtype=np.float32), 10) \
@@ -1282,9 +1177,7 @@ class TestBayesianLFPGraph(TestCase):
 
         self.graph.set_params(**{'bias': self.bias,
                                  'weights': self.weights,
-                                 'params': self.params,
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')
-                                 })
+                                 'params': self.params})
         self.graph.define_graph()
         self.graph.variance_estimate()
         _, users_x = self.graph.reshape_dataset(self.graph.n_users,
@@ -1302,11 +1195,12 @@ class TestBayesianLFPGraph(TestCase):
 
         ranking = np.array([[2, 1, 0], [2, 1, 0]], dtype=np.int32)
 
-        variance = sess.run(self.graph.variance,
-                            feed_dict={self.graph.x: sparse_x,
-                                       self.graph.n_users: n_users,
-                                       # self.graph.rankings: ranking}
-                                       })
+        sess.run(self.graph.variance_op,
+                 feed_dict={self.graph.x: sparse_x,
+                            self.graph.n_users: n_users,
+                            # self.graph.rankings: ranking}
+                            })
+        variance = sess.run(self.graph.variance)
         expected_variance = np.repeat(np.array([29 / 3, 14 / 3],
                                                dtype=np.float32), 10) \
             .reshape(n_users, 10)
@@ -1386,16 +1280,32 @@ class TestBayesianLFPGraph(TestCase):
 
         self.graph.set_params(**{'bias': bias,
                                  'weights': weights,
-                                 'params': params,
-                                 'y': tf.placeholder(shape=[None], dtype=tf.float32, name='y')})
+                                 'params': params})
         self.graph.define_graph()
         zeroed_x, _ = self.graph.reshape_dataset(self.graph.n_users,
                                                  self.graph.rankings,
                                                  self.graph.x)
+        rankings = np.array([[2, 1, 0],
+                             [2, 0, 1]], dtype=np.float32)
+        sess = tf.Session()
+        sess.run(self.graph.init_all_vars,
+                 feed_dict={self.graph.n_features: n_features})
+
+        two_dims = LatentFactorPortfolioGraph.two_dim_shape(zeroed_x, self.graph.rankings)
+        x_two_dim = tf.sparse_reshape(zeroed_x, shape=two_dims)
+        dot_prod = tf.sparse_tensor_dense_matmul(x_two_dim, self.graph.params)
+        three_dims = tf.concat([tf.shape(self.graph.rankings), tf.shape(dot_prod)[::-1]], axis=0)[:-1]
+        print(three_dims)
+        print(sess.run((two_dims, x_two_dim, dot_prod, three_dims), feed_dict={self.graph.x: sparse_x,
+                                            self.graph.rankings: rankings,
+                                            self.graph.n_users: n_users}))
         dot = self.graph.dot_product(self.graph.params,
                                      self.graph.rankings,
                                      zeroed_x)
 
+        actual_dot = sess.run(dot, feed_dict={self.graph.x: sparse_x,
+                                              self.graph.rankings: rankings,
+                                              self.graph.n_users: n_users})
         rankings = np.array([[2, 1, 0],
                              [2, 0, 1]], dtype=np.float32)
         sess = tf.Session()
@@ -1541,20 +1451,25 @@ class TestBayesianLFPGraph(TestCase):
         zeroed_x, _ = self.graph.reshape_dataset(self.graph.n_users,
                                                  self.graph.rankings,
                                                  self.graph.x)
+
+        rankings = np.array([[2, 1, 0],
+                             [2, 0, 1]], dtype=np.float32)
+
+        sess = tf.Session()
+        sess.run((self.graph.init_all_vars,
+                  self.graph.init_variance_vars),
+                 feed_dict={self.graph.n_users: n_users,
+                            self.graph.n_features: n_features})
+        print(sess.run(self.graph.x, feed_dict={self.graph.x: sparse_x}))
+        print(sess.run(zeroed_x, feed_dict={self.graph.x: sparse_x,
+                                            self.graph.rankings: rankings,
+                                            self.graph.n_users: n_users}))
         dot = self.graph.dot_product(self.graph.params,
                                      self.graph.rankings,
                                      zeroed_x)
         trd = self.graph.third_term(self.graph.k,
                                     self.graph.variance,
                                     dot, dtype=self.graph.dtype)
-
-        rankings = np.array([[2, 1, 0],
-                             [2, 0, 1]], dtype=np.float32)
-        sess = tf.Session()
-        sess.run((self.graph.init_all_vars,
-                  self.graph.init_variance_vars),
-                 feed_dict={self.graph.n_users: n_users,
-                            self.graph.n_features: n_features})
         actual_trd = sess.run(trd, feed_dict={self.graph.x: sparse_x,
                                               self.graph.k: 1,
                                               self.graph.rankings: rankings,
@@ -1634,71 +1549,6 @@ class TestBayesianLFPGraph(TestCase):
         expected = 0.5 * (pred[:, 1:] - (snd + 2 * trd))
 
         self.assertTrue(np.allclose(d, expected))
-
-    def test_unique_sparse_tensor(self):
-        n_users = 2
-        n_items = 3
-        x = np.array([[100, 200],
-                      [100, 201],
-                      [100, 202],
-                      [100, 200],
-                      [101, 200],
-                      [101, 201],
-                      [101, 202]])
-        enc = OneHotEncoder(dtype=np.float32)
-        new_x = enc.fit(x).transform(x).tocsr()
-        new_x.sort_indices()
-        sparse_x = sparse_repr(new_x, np.float32)
-        self.graph.define_graph()
-        self.graph.unique_rows_sparse_tensor()
-
-        sess = tf.Session()
-        actual = sess.run((self.graph.init_unique_vars,
-                           tf.sparse_tensor_to_dense(self.graph.unique_x)),
-                          feed_dict={self.graph.x: sparse_x,
-                                     self.graph.n_features: n_users + n_items,
-                                     self.graph.n_users: n_users,
-                                     self.graph.n_items: n_items})[1]
-        expected = np.array([[1, 0, 1, 0, 0],
-                             [1, 0, 0, 1, 0],
-                             [1, 0, 0, 0, 1],
-                             [0, 1, 1, 0, 0],
-                             [0, 1, 0, 1, 0],
-                             [0, 1, 0, 0, 1]])
-        self.assertTrue(np.all(actual == expected))
-
-    def test_unique_sparse_tensor_multi(self):
-        n_users = 2
-        n_items = 3
-        n_features = 7
-        x = np.array([[100, 200, 300],
-                      [100, 201, 300],
-                      [100, 202, 301],
-                      [100, 200, 300],
-                      [101, 200, 300],
-                      [101, 201, 300],
-                      [101, 202, 301]])
-        enc = OneHotEncoder(dtype=np.float32)
-        new_x = enc.fit(x).transform(x).tocsr()
-        new_x.sort_indices()
-        sparse_x = sparse_repr(new_x, np.float32)
-        self.graph.define_graph()
-        self.graph.unique_rows_sparse_tensor()
-
-        sess = tf.Session()
-        actual = sess.run((self.graph.init_unique_vars,
-                           tf.sparse_tensor_to_dense(self.graph.unique_x)),
-                          feed_dict={self.graph.x: sparse_x,
-                                     self.graph.n_features: n_features,
-                                     self.graph.n_users: n_users,
-                                     self.graph.n_items: n_items})[1]
-        expected = np.array([[1, 0, 1, 0, 0, 1, 0],
-                             [1, 0, 0, 1, 0, 1, 0],
-                             [1, 0, 0, 0, 1, 0, 1],
-                             [0, 1, 1, 0, 0, 1, 0],
-                             [0, 1, 0, 1, 0, 1, 0],
-                             [0, 1, 0, 0, 1, 0, 1]])
-        self.assertTrue(np.all(actual == expected))
 
     def tearDown(self):
         tf.reset_default_graph()

@@ -510,7 +510,7 @@ class LatentFactorPortfolioGraph(RankingGraph):
         return new_x, users_x
 
     @staticmethod
-    def reshape_dataset(n_users, tot_n_users, rankings, x):
+    def reshape_dataset(tot_n_users, rankings, x):
         shaped_x = LatentFactorPortfolioGraph.shape_cube_by_rank(x, rankings)
         swapped_x = LatentFactorPortfolioGraph.swap_tensor_by_rank(shaped_x, rankings)
         zeroed_x, users_x = LatentFactorPortfolioGraph.zero_users_columns(swapped_x, tot_n_users, axis=2)
@@ -589,8 +589,8 @@ class LatentFactorPortfolioGraph(RankingGraph):
         tf_shape = tf.stack([self.n_users, self.n_factors])
         self.variance = tf.Variable(tf.zeros(tf_shape, dtype=self.dtype),
                                     name='variance',
-                               validate_shape=False,
-                               trainable=False)
+                                    validate_shape=False,
+                                    trainable=False)
         init_sum_of_square = tf.Variable(tf.zeros(shape=tf_shape,
                                                   dtype=self.dtype),
                                          name='sum_of_square',
@@ -625,8 +625,7 @@ class LatentFactorPortfolioGraph(RankingGraph):
 
     def delta_f_computation(self):
         tot_n_users = tf.shape(self.variance, out_type=tf.int64)[0]
-        zero_x, users_x = self.reshape_dataset(self.n_users, tot_n_users,
-                                               self.rankings, self.x)
+        zero_x, users_x = self.reshape_dataset(tot_n_users, self.rankings, self.x)
         users = users_x.indices[:, 2]
         user_var = self.variance_lookup(users, self.variance)
         self.pk = self.ranking_coefficient(self.k, self.dtype)

@@ -1,9 +1,8 @@
-from threading import Thread
-
 from scipy.sparse import isspmatrix_csr
-from multiprocessing import Queue
 from abc import abstractmethod, ABC
 from tfdiv.utility import sparse_repr, cartesian_product
+from collections import defaultdict
+import random
 import pandas as pd
 import numpy as np
 
@@ -51,8 +50,7 @@ class PairDataset(Dataset):
 
     """
 
-    def __init__(self, pos, neg=None, ntype=np.float32, bootstrap_sampling='no_sample',
-                 frac=0.5, shuffle_size=1000, n_threads=2):
+    def __init__(self, pos, neg=None, ntype=np.float32, bootstrap_sampling='no_sample', max_samples=None):
         super(PairDataset, self).__init__()
         if not isspmatrix_csr(pos) or (neg is not None
                                        and not isspmatrix_csr(neg)):
@@ -63,10 +61,7 @@ class PairDataset(Dataset):
         self.neg = neg
         self.ntype = ntype
         if bootstrap_sampling == 'uniform_user':
-            self.sampler = UniformUserSampler(pos, neg,
-                                              frac=frac,
-                                              shuffle_size=shuffle_size,
-                                              n_threads=n_threads)
+            self.sampler = UniformUserSampler(pos, neg, max_samples=max_samples)
         elif bootstrap_sampling == 'no_sample':
             self.sampler = NoSample(pos, neg)
         else:
@@ -121,6 +116,7 @@ class Sampler(ABC):
             noo = np.transpose(neg.nonzero())
             ndf = pd.DataFrame(noo, columns=['nrow', 'user']) \
                 .groupby('nrow', as_index=False).min()
+
         return pdf, ndf
 
     @abstractmethod
@@ -148,153 +144,37 @@ class NoSample(Sampler):
 
 class UniformUserSampler(Sampler):
 
-    def __init__(self, pos, neg=None,
-                 frac=0.5, shuffle_size=1000, n_threads=2):
+    def __init__(self, pos, neg=None, max_samples=None):
         super(UniformUserSampler, self).__init__(pos, neg)
-        self.shuffle_size = shuffle_size
-        self.n_threads = n_threads
-        self.frac = frac
+        self.max_samples = max_samples or self.pdf.shape[0]
+
+        self.pos_idx = defaultdict(list)
+        for xi in self.pdf.values:
+            self.pos_idx[xi[0]].append(xi[1])
+        if neg is not None:
+            self.neg_idx = defaultdict(list)
+            for xi in self.ndf.values:
+                self.neg_idx[xi[0]].append(xi[1])
+        self.users = self.pdf.user.unique()
+
+    def uniform_user(self):
+        return random.choice(self.users)
 
     def sample(self, batch_size):
-        def cartesian(inbound_queue, outbound_queue, pdf, ndf, frac):
-            while True:
-                u = inbound_queue.get()
-                if type(u) is dict:
-                    outbound_queue.put(u)
-                    break
-                pos = pdf.loc[pdf['user'] == u, 'prow'].values
-                if ndf is not None:
-                    neg = ndf.loc[ndf['user'] == u, 'nrow'].values
-                    idx = cartesian_product(pos, neg)
-                else:
-                    idx = np.array(pos)
-                rows_idx = np.arange(idx.shape[0])
-                np.random.shuffle(rows_idx)
-                idx = idx[rows_idx[0:int(frac * idx.shape[0])]]
-                outbound_queue.put(idx)
-
-        out_queue = Queue(maxsize=0 if batch_size == -1 else self.shuffle_size)
-        in_queue = Queue()
-
-        pos_idx, neg_idx = self.pdf, self.ndf
-        for i in range(self.n_threads):
-            worker = Thread(target=cartesian,
-                            args=(in_queue, out_queue,
-                                  pos_idx, neg_idx, self.frac))
-            worker.setDaemon(True)
-            worker.start()
-
-        def main(pidx, q, n_threads):
-            for u in pidx.user.unique():
-                q.put(u)
-            for j in range(n_threads):
-                q.put({"end": j})
-
-        Thread(target=main,
-               args=(self.pdf, in_queue, self.n_threads),
-               daemon=True).start()
-
-        n_thread_ended = 0
-        buffer = []
-        while True:
-            item = out_queue.get()
-            if type(item) is dict:
-                n_thread_ended += 1
+        idx = []
+        for _ in np.arange(self.max_samples):
+            u = self.uniform_user()
+            p = random.choice(self.pos_idx[u])
+            if self.ndf is not None:
+                n = random.choice(self.neg_idx[u])
+                idx.append([p, n])
             else:
-                buffer.append(item)
-            if n_thread_ended == self.n_threads:
-                break
-            if batch_size != -1 and self.shuffle_size != 0 and \
-                    len(buffer) == self.shuffle_size:
-                buffer = np.concatenate(buffer)
-                np.random.shuffle(buffer)
-                for i in range(0, buffer.shape[0], batch_size):
-                    upper_bound = min(i + batch_size, buffer.shape[0])
-                    yield buffer[i:upper_bound]
-                buffer = []
-
-        if batch_size == -1:
-            np.random.shuffle(buffer)
-            yield np.concatenate(buffer)
-        else:
-            buffer = np.concatenate(buffer)
-            np.random.shuffle(buffer)
-            for i in range(0, buffer.shape[0], batch_size):
-                upper_bound = min(i + batch_size, buffer.shape[0])
-                yield buffer[i:upper_bound]
-
-
-#
-#
-# class RandomSampler(Sampler):
-#
-#     def __init__(self, pos, neg=None, shuffle_size=1000, n_threads=2):
-#         super(RandomSampler, self).__init__(pos, neg)
-#         self.shuffle_size = shuffle_size
-#         self.n_threads = n_threads
-#
-#     def sample(self, batch_size):
-#
-#         def cartesian_shuffling(id, batch, q, shuffle_size, pos_idx, neg_idx):
-#             head = None
-#             for u in batch:
-#                 pos = pos_idx[u]
-#                 if neg_idx is not None:
-#                     neg = neg_idx[u]
-#                     idx = cartesian_product(pos, neg)
-#                 else:
-#                     idx = np.array(pos)
-#                 if head is not None:
-#                     idx = np.concatenate((head, idx))
-#                     head = None
-#                 if idx.shape[0] >= shuffle_size:
-#                     np.random.shuffle(idx)
-#                     for i in range(0, idx.shape[0], shuffle_size):
-#                         upper_bound = min(i + shuffle_size, idx.shape[0])
-#                         if upper_bound - i == shuffle_size:
-#                             q.put(idx[i:upper_bound])
-#                         else:
-#                             head = idx[i:upper_bound]
-#                 else:
-#                     head = idx
-#             if head is not None:
-#                 q.put(head)
-#             q.put({'id': id})
-#
-#         q = Queue(maxsize=self.shuffle_size)
-#
-#         users = np.array(list(self.pos_idx.keys()))
-#         np.random.shuffle(users)
-#
-#         batch_users = int(users.shape[0] / self.n_threads)
-#         threads = []
-#         for i in range(0, users.shape[0], batch_users):
-#             upper_bound = min(i + batch_users, users.shape[0])
-#             t = Thread(target=cartesian_shuffling,
-#                        args=(i, users[i:upper_bound], q, self.shuffle_size,
-#                              self.pos_idx, self.neg_idx))
-#             t.setDaemon(True)
-#             threads.append(t)
-#
-#         for t in threads:
-#             t.start()
-#
-#         final = None
-#         ended_threads = set()
-#         while True:
-#             if len(ended_threads) == len(threads):
-#                 break
-#             shuffled_batch = q.get()
-#             if type(shuffled_batch) is dict:
-#                 ended_threads.add(shuffled_batch['id'])
-#             elif batch_size != -1:
-#                 for i in range(0, shuffled_batch.shape[0], batch_size):
-#                     upper_bound = min(i + batch_size, shuffled_batch.shape[0])
-#                     yield shuffled_batch[i:upper_bound]
-#             elif final is None:
-#                 final = shuffled_batch
-#             else:
-#                 final = np.concatenate((final, shuffled_batch))
+                idx.append(p)
+            if len(idx) == batch_size:
+                yield np.array(idx)
+                idx = []
+        if len(idx) > 0:
+            yield np.array(idx)
 
 
 class SimpleDataset(Dataset):

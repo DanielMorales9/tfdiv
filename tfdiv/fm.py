@@ -803,13 +803,11 @@ class BayesianPersonalizedRanking(Ranking):
                  optimizer=tf.train.AdamOptimizer,
                  opt_kwargs=None,
                  seed=1,
-                 frac=0.5,
                  show_progress=True,
                  bootstrap_sampling='uniform_user',
                  log_dir=None,
                  session_config=None,
-                 n_threads=2,
-                 shuffle_size=100,
+                 max_samples=None,
                  tol=None,
                  n_iter_no_change=10,
                  core=None):
@@ -823,7 +821,6 @@ class BayesianPersonalizedRanking(Ranking):
                                                           session_config=session_config,
                                                           n_iter_no_change=n_iter_no_change,
                                                           tol=tol)
-        self.frac = frac
         self.bootstrap_sampling = bootstrap_sampling
         self.init_std = init_std
         self.dtype = dtype
@@ -831,8 +828,7 @@ class BayesianPersonalizedRanking(Ranking):
         self.learning_rate = learning_rate
         self.l2_w = l2_w
         self.l2_v = l2_v
-        self.shuffle_size = shuffle_size
-        self.n_threads = n_threads
+        self.max_samples = max_samples
         self.opt_kwargs = opt_kwargs
         # Computational graph initialization
         self.init_core(core)
@@ -860,10 +856,8 @@ class BayesianPersonalizedRanking(Ranking):
 
     def init_dataset(self, pos, neg=None, bootstrap_sampling='no_sample'):
         dataset = PairDataset(pos, neg=neg,
-                              frac=self.frac,
                               ntype=self.ntype,
-                              shuffle_size=self.shuffle_size,
-                              n_threads=self.n_threads,
+                              max_samples=self.max_samples,
                               bootstrap_sampling=bootstrap_sampling) \
             .batch(self.batch_size)
         return dataset
@@ -1301,14 +1295,12 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                  optimizer=tf.train.AdamOptimizer,
                  opt_kwargs=None,
                  seed=1,
-                 frac=0.5,
                  show_progress=True,
                  bootstrap_sampling='uniform_user',
                  log_dir=None,
                  session_config=None,
                  tol=None,
-                 shuffle_size=1000,
-                 n_threads=10,
+                 max_samples=None,
                  n_iter_no_change=10,
                  core=None):
 
@@ -1319,13 +1311,11 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
         self.learning_rate = learning_rate
         self.l2_v = l2_v
         self.l2_w = l2_w
-        self.shuffle_size = shuffle_size
-        self.n_threads = n_threads
+        self.max_samples = max_samples
         self.opt_kwargs = opt_kwargs
         self.init_core(core)
         super(BayesianPersonalizedRankingLFP, self).__init__(epochs=epochs,
                                                              batch_size=batch_size,
-                                                             frac=frac,
                                                              bootstrap_sampling=bootstrap_sampling,
                                                              n_factors=n_factors,
                                                              dtype=dtype,
