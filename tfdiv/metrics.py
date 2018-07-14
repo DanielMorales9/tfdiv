@@ -1,3 +1,5 @@
+from tfdiv.utility import ranked_relevance_feedback, category_mapper
+from collections import defaultdict
 import numpy as np
 
 
@@ -95,3 +97,71 @@ def dcg_at_k_with_importance(relevance, topics, importance):
                 scores[u] += (importance[item]**tops.count(topics[item])) * wi
                 tops.append(topics[item])
     return np.mean(scores)
+
+
+def relevance_judgements(data):
+    n_users = data.user.unique()
+    n_items = data.item.unique()
+    user_map = category_mapper(np.sort(data.user.unique()))
+    item_map = category_mapper(np.sort(data.item.unique()))
+    ui = data.values[:, :-2]
+    for i in range(ui.shape[0]):
+        ui[i, 0] = user_map[ui[i, 0]]
+        ui[i, 1] = item_map[ui[i, 1]]
+    rel_jud = np.zeros((n_users, n_items), dtype=np.int32)
+    rel_jud[ui[:, 0], ui[:, 1]] = 1
+    return rel_jud
+
+
+def alpha_ndcg_at_k(alpha, rankings, relevance, topics):
+    k = rankings.shape[1]
+    ranked_rel = ranked_relevance_feedback(rankings, relevance)
+    _alpha_dcg_at_k = alpha_dcg_at_k(alpha, ranked_rel, rankings, topics)
+    _alpha_ideal_dcg_at_k = alpha_ideal_dcg_at_k(alpha, relevance, topics, k)
+    return _alpha_dcg_at_k / _alpha_ideal_dcg_at_k
+
+
+def alpha_dcg_at_k(alpha, ranked_rel, rankings, topics):
+    _alpha_dcg_at_k = np.zeros(rankings.shape[0], np.float)
+    for u, (rel, rank) in enumerate(zip(ranked_rel, rankings)):
+        cum = 0.0
+        q = defaultdict(lambda : 1)
+        for k, (r, i) in enumerate(zip(rel, rank)):
+            j = 0.0
+            for g in topics[i]:
+                j += r * (1 - alpha) ** q[g]
+                q[g] += 1
+            cum += (j / np.log2(k+2))
+        _alpha_dcg_at_k[u] = cum
+    return _alpha_dcg_at_k
+
+
+def alpha_ideal_dcg_at_k(alpha, relevance, topics, k):
+    # Greedy approach
+    dcgs = np.zeros(relevance.shape[0], np.float)
+    for user, user_relevance in enumerate(relevance):
+        topic_gain = defaultdict(lambda: 1.0)
+        dropped_out = []
+        for rank in range(k):
+            # Compute gain
+            g = [ideal_gain(topics[id], topic_gain)
+                 if item == 1 and id not in dropped_out
+                 else 0.0 for id, item in enumerate(user_relevance)]
+            item_id = np.argmax(g)
+            max_g = max(g)
+
+            # Increment topic ids
+            if max_g > 0:
+                for tid in topics[item_id]:
+                    topic_gain[tid] *= 1.0 - alpha
+            dropped_out.append(item_id)
+            dg = max_g / np.log2(k+2)
+            dcgs[user] += dg
+    return dcgs
+
+
+def ideal_gain(topics, topic_gain):
+    _gain = 0.0
+    for tid in topics:
+        _gain += topic_gain[tid]
+    return _gain
