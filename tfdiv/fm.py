@@ -1003,7 +1003,7 @@ class LatentFactorPortfolio(Ranking):
             delta_f = self.session.run(self.core.delta_f,
                                        feed_dict=fd)
             delta_arg_max = np.argmax(delta_f, axis=1)
-            matrix_swag_at_k(delta_arg_max, i, pred)
+            matrix_swap_at_k(delta_arg_max, i, pred)
             matrix_swap_at_k(delta_arg_max, i, rank)
             matrix_swap_at_k(delta_arg_max, i, rank)
         return rank[:, :k]
@@ -1311,11 +1311,11 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
         self.learning_rate = learning_rate
         self.l2_v = l2_v
         self.l2_w = l2_w
-        self.max_samples = max_samples
         self.opt_kwargs = opt_kwargs
         self.init_core(core)
         super(BayesianPersonalizedRankingLFP, self).__init__(epochs=epochs,
                                                              batch_size=batch_size,
+                                                             max_samples=max_samples,
                                                              bootstrap_sampling=bootstrap_sampling,
                                                              n_factors=n_factors,
                                                              dtype=dtype,
