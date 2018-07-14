@@ -124,8 +124,8 @@ cond = lambda x, y: y if x is None else x
 
 
 def relevance_judgements(data):
-    n_users = data.user.unique()
-    n_items = data.item.unique()
+    n_users = data.user.unique().shape[0]
+    n_items = data.item.unique().shape[0]
     user_map = category_mapper(np.sort(data.user.unique()))
     item_map = category_mapper(np.sort(data.item.unique()))
     ui = data.values[:, :-2]
