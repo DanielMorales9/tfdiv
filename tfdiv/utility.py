@@ -121,3 +121,17 @@ def num_of_users_from_indices(indices):
 
 
 cond = lambda x, y: y if x is None else x
+
+
+def relevance_judgements(data):
+    n_users = data.user.unique()
+    n_items = data.item.unique()
+    user_map = category_mapper(np.sort(data.user.unique()))
+    item_map = category_mapper(np.sort(data.item.unique()))
+    ui = data.values[:, :-2]
+    for i in range(ui.shape[0]):
+        ui[i, 0] = user_map[ui[i, 0]]
+        ui[i, 1] = item_map[ui[i, 1]]
+    rel_jud = np.zeros((n_users, n_items), dtype=np.int32)
+    rel_jud[ui[:, 0], ui[:, 1]] = 1
+    return rel_jud

@@ -1,4 +1,4 @@
-from tfdiv.utility import ranked_relevance_feedback, category_mapper
+from tfdiv.utility import ranked_relevance_feedback
 from collections import defaultdict
 import numpy as np
 
@@ -97,20 +97,6 @@ def dcg_at_k_with_importance(relevance, topics, importance):
                 scores[u] += (importance[item]**tops.count(topics[item])) * wi
                 tops.append(topics[item])
     return np.mean(scores)
-
-
-def relevance_judgements(data):
-    n_users = data.user.unique()
-    n_items = data.item.unique()
-    user_map = category_mapper(np.sort(data.user.unique()))
-    item_map = category_mapper(np.sort(data.item.unique()))
-    ui = data.values[:, :-2]
-    for i in range(ui.shape[0]):
-        ui[i, 0] = user_map[ui[i, 0]]
-        ui[i, 1] = item_map[ui[i, 1]]
-    rel_jud = np.zeros((n_users, n_items), dtype=np.int32)
-    rel_jud[ui[:, 0], ui[:, 1]] = 1
-    return rel_jud
 
 
 def alpha_ndcg_at_k(alpha, rankings, relevance, topics):
