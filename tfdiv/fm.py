@@ -1003,9 +1003,9 @@ class LatentFactorPortfolio(Ranking):
             delta_f = self.session.run(self.core.delta_f,
                                        feed_dict=fd)
             delta_arg_max = np.argmax(delta_f, axis=1)
-            matrix_swap_at_k(delta_arg_max, k, pred)
-            matrix_swap_at_k(delta_arg_max, k, rank)
-            matrix_swap_at_k(delta_arg_max, k, rank)
+            matrix_swag_at_k(delta_arg_max, i, pred)
+            matrix_swap_at_k(delta_arg_max, i, rank)
+            matrix_swap_at_k(delta_arg_max, i, rank)
         return rank[:, :k]
 
 
