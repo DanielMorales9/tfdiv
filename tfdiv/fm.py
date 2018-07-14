@@ -1,6 +1,6 @@
 from tfdiv.graph import PointwiseGraph, BPRLFPGraph, \
     BayesianPersonalizedRankingGraph as BPRGraph, PointwiseRankingGraph
-from tfdiv.utility import sparse_repr, loss_logistic, \
+from tfdiv.utility import sparse_repr, binary_cross_entropy, \
     matrix_swap_at_k
 from sklearn.base import BaseEstimator, ClassifierMixin
 from tfdiv.graph import PointwiseLFPGraph
@@ -457,7 +457,7 @@ class Classification(Pointwise):
         """
 
     def __init__(self,
-                 loss_function=loss_logistic,
+                 loss_function=binary_cross_entropy,
                  label_transform=lambda y: y * 2 - 1,
                  epochs=100,
                  batch_size=-1,
@@ -681,7 +681,7 @@ class ClassificationRanking(Classification, Ranking):
                  n_factors=10,
                  dtype=tf.float32,
                  init_std=0.01,
-                 loss_function=loss_logistic,
+                 loss_function=binary_cross_entropy,
                  label_transform=lambda y: y * 2 - 1,
                  l2_v=0.001,
                  l2_w=0.001,
@@ -1168,7 +1168,7 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
         Computational Graph
     """
     def __init__(self,
-                 loss_function=loss_logistic,
+                 loss_function=binary_cross_entropy,
                  label_transform=lambda y: y * 2 - 1,
                  epochs=100,
                  batch_size=-1,

@@ -108,10 +108,9 @@ def sigmoid(x):
 # Should take 2 tf.Ops: outputs, targets and should return tf.Op of element-wise losses
 # Be careful about dimensionality -- maybe tf.transpose(outputs) is needed
 
-def loss_logistic(outputs, y):
-    margins = -y * tf.transpose(outputs)
-    raw_loss = tf.log(tf.add(1.0, tf.exp(margins)))
-    return tf.minimum(raw_loss, 100, name='truncated_log_loss')
+def binary_cross_entropy(outputs, y):
+    p = tf.sigmoid(outputs)
+    return - tf.reduce_mean(y * tf.log(p) + (1 - y) * tf.log(1 - p))
 
 
 def num_of_users_from_indices(indices):
