@@ -81,7 +81,7 @@ def dcg_at_k(relevance, topics):
             if topics[item] is not None:
                 scores[u] += len(set(topics[item]).difference(tops))*wi
                 tops.update(topics[item])
-    return scores
+    return np.mean(scores)
 
 
 def dcg_at_k_with_importance(relevance, topics, importance):
@@ -94,4 +94,4 @@ def dcg_at_k_with_importance(relevance, topics, importance):
             if topics[item] is not None:
                 scores[u] += (importance[item]**tops.count(topics[item])) * wi
                 tops.append(topics[item])
-    return scores
+    return np.mean(scores)
