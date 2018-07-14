@@ -42,6 +42,18 @@ def ranked_relevance_feedback(rank, rel_feed):
     return rs
 
 
+def relevance_judgements(n_users, n_items, data):
+    user_map = category_mapper(np.sort(data.user.unique()))
+    item_map = category_mapper(np.sort(data.item.unique()))
+    ui = data.values[:, :-2]
+    for i in range(ui.shape[0]):
+        ui[i, 0] = user_map[ui[i, 0]]
+        ui[i, 1] = item_map[ui[i, 1]]
+    rel_jud = np.zeros((n_users, n_items), dtype=np.int32)
+    rel_jud[ui[:, 0], ui[:, 1]] = 1
+    return rel_jud
+
+
 def csr_cartesian_product(users, items):
     n_items, n_features = items.shape
     n_users = users.shape[0]
@@ -56,23 +68,6 @@ def csr_cartesian_product(users, items):
     items = bmat(np.array(sp).reshape(-1, 1))
     new_x = items + users
     return new_x
-
-
-def relevance_feedback(n_users, tot_n_items, tot_n_users, X):
-    ui = []
-    for i in np.arange(X.shape[0]):
-        ui.append(X.indices[X.indptr[i]:X.indptr[i + 1]][:2])
-    ui = np.unique(ui, axis=1)
-
-    ui[:, 1] -= tot_n_users
-    c = count(0)
-    dic = defaultdict(c.__next__)
-    for i, u in enumerate(ui[:, 0]):
-        ui[i, 0] = dic[u]
-
-    rel = np.zeros((n_users, tot_n_items), dtype=np.int32)
-    rel[ui[:, 0], ui[:, 1]] = 1
-    return rel
 
 
 def chunks(L, n):
@@ -121,17 +116,3 @@ def num_of_users_from_indices(indices):
 
 
 cond = lambda x, y: y if x is None else x
-
-
-def relevance_judgements(data):
-    n_users = data.user.unique().shape[0]
-    n_items = data.item.unique().shape[0]
-    user_map = category_mapper(np.sort(data.user.unique()))
-    item_map = category_mapper(np.sort(data.item.unique()))
-    ui = data.values[:, :-2]
-    for i in range(ui.shape[0]):
-        ui[i, 0] = user_map[ui[i, 0]]
-        ui[i, 1] = item_map[ui[i, 1]]
-    rel_jud = np.zeros((n_users, n_items), dtype=np.int32)
-    rel_jud[ui[:, 0], ui[:, 1]] = 1
-    return rel_jud
