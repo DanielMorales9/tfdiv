@@ -347,7 +347,10 @@ class PointwiseRankingGraph(PointwiseGraph, RankingGraph):
 
     def init_placeholder(self):
         PointwiseGraph.init_placeholder(self)
-        self.y = tf.placeholder(shape=[None], name="y", dtype=self.dtype)
+        self.k = tf.placeholder(shape=[], dtype=tf.int32, name='k')
+        self.n_users = tf.placeholder(dtype=tf.int64, shape=[], name='n_users')
+        self.n_items = tf.placeholder(dtype=tf.int64, shape=[], name='n_items')
+        self.pred = tf.placeholder(dtype=self.dtype, shape=[None], name='y_pred')
 
 
 class BayesianPersonalizedRankingGraph(RankingGraph):
@@ -474,13 +477,13 @@ class LatentFactorPortfolioGraph(RankingGraph):
 
     @staticmethod
     def two_dim_shape(x, rankings):
-        return tf.stack([tf.reduce_prod(tf.shape(rankings)),
-                         tf.shape(x)[-1]], axis=0)
+        return tf.reshape(tf.stack([tf.reduce_prod(tf.shape(rankings)),
+                                    tf.shape(x)[-1]], axis=0), [-1])
 
     @staticmethod
     def three_dim_shape(x, rankings):
-        return tf.concat([tf.shape(rankings),
-                          tf.shape(x)[::-1]], axis=0)[:-1]
+        return tf.reshape(tf.concat([tf.shape(rankings),
+                                     tf.shape(x)[::-1]], axis=0)[:-1], [-1])
 
     @staticmethod
     def shape_cube_by_rank(x, rankings):
@@ -646,7 +649,15 @@ class PointwiseLFPGraph(PointwiseRankingGraph, LatentFactorPortfolioGraph):
 
     def init_placeholder(self):
         PointwiseRankingGraph.init_placeholder(self)
-        LatentFactorPortfolioGraph.init_placeholder(self)
+        # Predictions and Rankings
+        self.predictions = tf.placeholder(shape=[None, None],
+                                          dtype=self.dtype,
+                                          name='predictions')
+        self.rankings = tf.placeholder(shape=[None, None],
+                                       dtype=tf.int32,
+                                       name='rankings')
+        # System-level diversity
+        self.b = tf.placeholder(shape=[], dtype=self.dtype, name='b')
 
 
 class BPRLFPGraph(BayesianPersonalizedRankingGraph, LatentFactorPortfolioGraph):
