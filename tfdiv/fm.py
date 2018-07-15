@@ -700,12 +700,15 @@ class ClassificationRanking(Classification, Ranking):
         self.dtype = dtype
         self.optimizer = optimizer
         self.learning_rate = learning_rate
+        self.loss_function = loss_function
         self.l2_v = l2_v
         self.l2_w = l2_w
         self.opt_kwargs = opt_kwargs
         self.init_core(core)
 
         super(ClassificationRanking, self).__init__(epochs=epochs,
+                                                    init_std=init_std,
+                                                    opt_kwargs=opt_kwargs,
                                                     label_transform=label_transform,
                                                     loss_function=loss_function,
                                                     l2_w=l2_w,
@@ -729,6 +732,7 @@ class ClassificationRanking(Classification, Ranking):
                                        init_std=self.init_std,
                                        opt_kwargs=self.opt_kwargs,
                                        dtype=self.dtype,
+                                       loss_function=self.loss_function,
                                        optimizer=self.optimizer,
                                        learning_rate=self.learning_rate,
                                        l2_v=self.l2_v,
