@@ -111,7 +111,7 @@ def sigmoid(x):
 def binary_cross_entropy(labels, predictions):
     p = tf.sigmoid(predictions)
     y = labels
-    return y * -tf.log(p) + (1 - y) * -tf.log(1 - p)
+    return -(y * -tf.log(p) + (1 - y) * -tf.log(1 - p))
 
 
 def num_of_users_from_indices(indices):
