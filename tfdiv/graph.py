@@ -239,7 +239,7 @@ class PointwiseGraph(ComputationalGraph):
     def init_loss(self):
         y_true = self.y
         assert y_true is not None, "y must be set before graph is defined"
-        self.loss = self.loss_function(self.y_hat, y_true)
+        self.loss = self.loss_function(y_true, self.y_hat)
         self.reduced_loss = tf.reduce_mean(self.loss)
         self.size = tf.cast(tf.size(self.y_hat), dtype=self.dtype)
         self.batch_loss = self.reduced_loss * self.size
