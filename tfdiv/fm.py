@@ -37,6 +37,7 @@ class BaseClassifier(BaseEstimator, ClassifierMixin):
     n_iter_no_change : int, optional (Default 10)
         Maximum number of epochs to not meet ``tol`` improvement.
     """
+
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
@@ -200,6 +201,7 @@ class Pointwise(BaseClassifier):
     core : ``tfdiv.graph``, optional (Default None)
         Computational Graph
     """
+
     def __init__(self,
                  epochs=100,
                  batch_size=-1,
@@ -252,16 +254,21 @@ class Pointwise(BaseClassifier):
                                                      l2_v=self.l2_v,
                                                      l2_w=self.l2_w)
 
+    @abstractmethod
+    def _pre_process_sample_weights(self, y):
+        pass
+
     def init_input(self, x, y=None):
         if not x.has_sorted_indices:
             x.sort_indices()
         n_samples, self.n_features = x.shape
         if y is not None:
-            return x, y, n_samples
+            w = self._pre_process_sample_weights(y)
+            return x, y, w, n_samples
         return x, n_samples
 
-    def init_dataset(self, x, y=None):
-        dataset = SimpleDataset(x, y=y, ntype=self.ntype) \
+    def init_dataset(self, x, y=None, w=None):
+        dataset = SimpleDataset(x, y=y, w=w, ntype=self.ntype) \
             .batch(self.batch_size)
         if y is not None:
             dataset.shuffle(True)
@@ -274,8 +281,8 @@ class Pointwise(BaseClassifier):
 
     def fit(self, X, y=None):
         with self.graph.as_default():
-            x, y, n_samples = self.init_input(X, y)
-            dataset = self.init_dataset(x, y)
+            x, y, w, n_samples = self.init_input(X, y)
+            dataset = self.init_dataset(x, y, w)
             if self.train is None:
                 self.init_computational_graph()
 
@@ -287,8 +294,8 @@ class Pointwise(BaseClassifier):
                           unit='epochs',
                           disable=not self.show_progress):
             loss = 0.0
-            for x, y in dataset.get_next():
-                fd = dataset.batch_to_feed_dict(x, y, self.core)
+            for x, y, w in dataset.get_next():
+                fd = dataset.batch_to_feed_dict(x, y, w, self.core)
                 _, summary, step, batch_loss = self.session.run(ops, feed_dict=fd)
                 self.log_summary(summary, step)
                 loss += batch_loss
@@ -322,7 +329,6 @@ class Pointwise(BaseClassifier):
 
 
 class Regression(Pointwise):
-
     """
     Regression Module
 
@@ -403,6 +409,9 @@ class Regression(Pointwise):
                                          tol=tol,
                                          core=core)
 
+    def _pre_process_sample_weights(self, y):
+        return np.ones_like(y)
+
     def decision_function(self, x):
         return x
 
@@ -422,9 +431,6 @@ class Classification(Pointwise):
     batch_size : int, optional (Default -1)
         Batch size to use while training classifier.
         -1 means no batch_size to use.
-    label_transform: function, optional
-        Function that transforms y labels to a value interval
-        that better suits the passed loss_function.
     n_factors : int, optional (Default 10)
         the number of factors used to factorize
         pairwise interactions between variables.
@@ -458,7 +464,6 @@ class Classification(Pointwise):
 
     def __init__(self,
                  loss_function=binary_cross_entropy,
-                 label_transform=lambda y: y * 2 - 1,
                  epochs=100,
                  batch_size=-1,
                  n_factors=10,
@@ -466,6 +471,8 @@ class Classification(Pointwise):
                  init_std=0.01,
                  l2_v=0.001,
                  l2_w=0.001,
+                 sample_weight=None,
+                 pos_class_weight=None,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
                  opt_kwargs=None,
@@ -476,6 +483,8 @@ class Classification(Pointwise):
                  n_iter_no_change=10,
                  seed=1,
                  core=None):
+        self.sample_weight = sample_weight
+        self.pos_class_weight = pos_class_weight
         super(Classification, self).__init__(epochs=epochs,
                                              loss_function=loss_function,
                                              n_factors=n_factors,
@@ -494,7 +503,33 @@ class Classification(Pointwise):
                                              n_iter_no_change=n_iter_no_change,
                                              tol=tol,
                                              core=core)
-        self.label_transform = label_transform
+
+    def _pre_process_sample_weights(self, y):
+        sample_weight = self.sample_weight
+        pos_class_weight = self.pos_class_weight
+        assert sample_weight is None \
+               or pos_class_weight is None, "sample_weight and " \
+                                            "pos_class_weight " \
+                                            "are mutually exclusive " \
+                                            "parameters"
+        w = np.ones_like(y)
+        if sample_weight is None and pos_class_weight is None:
+            return w
+        if type(pos_class_weight) == float:
+            w[y > 0] = pos_class_weight
+        elif sample_weight == "balanced":
+            pos_rate = np.mean(y > 0)
+            neg_rate = 1 - pos_rate
+            w[y > 0] = neg_rate / pos_rate
+            w[y < 0] = 1.0
+            return w
+        elif type(sample_weight) == np.ndarray and len(sample_weight.shape) == 1:
+            w = sample_weight
+        else:
+            raise ValueError("Unexpected type for sample_weight "
+                             "or pos_class_weight parameters.")
+
+        return w
 
     def decision_function(self, x):
         return (x > 0).astype(int)
@@ -504,10 +539,10 @@ class Classification(Pointwise):
 
 
 class Ranking(BaseClassifier):
-
     """
     Abstract Ranking Module.
     """
+
     def init_computational_graph(self):
         self.core.define_graph()
         self.core.ranking_computation()
@@ -588,7 +623,7 @@ class RegressionRanking(Regression, Ranking):
         self.learning_rate = learning_rate
         self.l2_v = l2_v
         self.l2_w = l2_w
-        self.opt_kwargs=opt_kwargs
+        self.opt_kwargs = opt_kwargs
         self.init_core(core)
 
         super(RegressionRanking, self).__init__(epochs=epochs,
@@ -682,9 +717,10 @@ class ClassificationRanking(Classification, Ranking):
                  dtype=tf.float32,
                  init_std=0.01,
                  loss_function=binary_cross_entropy,
-                 label_transform=lambda y: y * 2 - 1,
                  l2_v=0.001,
                  l2_w=0.001,
+                 sample_weight=None,
+                 pos_class_weight=None,
                  learning_rate=0.001,
                  optimizer=tf.train.AdamOptimizer,
                  opt_kwargs=None,
@@ -709,7 +745,8 @@ class ClassificationRanking(Classification, Ranking):
         super(ClassificationRanking, self).__init__(epochs=epochs,
                                                     init_std=init_std,
                                                     opt_kwargs=opt_kwargs,
-                                                    label_transform=label_transform,
+                                                    sample_weight=sample_weight,
+                                                    pos_class_weight=pos_class_weight,
                                                     loss_function=loss_function,
                                                     l2_w=l2_w,
                                                     l2_v=l2_v,
@@ -1075,7 +1112,6 @@ class RegressionLFP(RegressionRanking, LatentFactorPortfolio):
                  tol=None,
                  n_iter_no_change=10,
                  core=None):
-
         self.n_factors = n_factors
         self.init_std = init_std
         self.dtype = dtype
@@ -1171,9 +1207,9 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
     core : ``tfdiv.graph``, optional (Default None)
         Computational Graph
     """
+
     def __init__(self,
                  loss_function=binary_cross_entropy,
-                 label_transform=lambda y: y * 2 - 1,
                  epochs=100,
                  batch_size=-1,
                  n_factors=10,
@@ -1182,6 +1218,8 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                  l2_v=0.001,
                  l2_w=0.001,
                  learning_rate=0.001,
+                 sample_weight=None,
+                 pos_class_weight=None,
                  optimizer=tf.train.AdamOptimizer,
                  opt_kwargs=None,
                  show_progress=True,
@@ -1191,7 +1229,6 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
                  n_iter_no_change=10,
                  seed=1,
                  core=None):
-
         self.n_factors = n_factors
         self.init_std = init_std
         self.dtype = dtype
@@ -1203,8 +1240,9 @@ class ClassificationLFP(ClassificationRanking, LatentFactorPortfolio):
         self.init_core(core)
         super(ClassificationLFP, self).__init__(epochs=epochs,
                                                 loss_function=loss_function,
-                                                label_transform=label_transform,
                                                 init_std=init_std,
+                                                pos_class_weight=pos_class_weight,
+                                                sample_weight=sample_weight,
                                                 batch_size=batch_size,
                                                 n_factors=n_factors,
                                                 dtype=dtype,
@@ -1307,7 +1345,6 @@ class BayesianPersonalizedRankingLFP(BayesianPersonalizedRanking, LatentFactorPo
                  max_samples=None,
                  n_iter_no_change=10,
                  core=None):
-
         self.n_factors = n_factors
         self.init_std = init_std
         self.dtype = dtype

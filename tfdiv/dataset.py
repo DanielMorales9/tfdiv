@@ -197,7 +197,7 @@ class SimpleDataset(Dataset):
 
     """
 
-    def __init__(self, x, y=None,
+    def __init__(self, x, y=None, w=None,
                  ntype=np.float32):
         super(SimpleDataset, self).__init__()
         if not isspmatrix_csr(x):
@@ -207,6 +207,7 @@ class SimpleDataset(Dataset):
         self.ntype = ntype
         self.x = x
         self.y = y
+        self.w = w
 
     def get_next(self):
         """
@@ -239,17 +240,19 @@ class SimpleDataset(Dataset):
         x.sort_indices()
         if self.y is not None:
             y = self.y[idx]
+            w = self.w[idx]
 
         for i in range(0, n_samples, batch_size):
             upper_bound = min(i + batch_size, n_samples)
             batch_x = x[i:upper_bound]
             if self.y is not None:
                 batch_y = y[i:i + batch_size]
-                yield (batch_x, batch_y)
+                batch_w = w[i:i + batch_size]
+                yield (batch_x, batch_y, batch_w)
             else:
                 yield batch_x
 
-    def batch_to_feed_dict(self, x, y=None, core=None):
+    def batch_to_feed_dict(self, x, y=None, w=None, core=None):
         """
         Parameters:
         -------
@@ -276,5 +279,6 @@ class SimpleDataset(Dataset):
 
         if y is not None:
             fd[core.y] = y.astype(self.ntype)
+            fd[core.w] = w.astype(self.ntype)
 
         return fd
