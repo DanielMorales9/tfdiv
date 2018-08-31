@@ -161,8 +161,8 @@ class ComputationalGraph(ABC):
                                        shape=[None, self.n_features],
                                        name='pos')
         self.w = tf.placeholder(self.dtype,
-                                       shape=[None],
-                                       name='sample_weights')
+                                shape=[None],
+                                name='sample_weights')
 
     def fit_operations(self):
         self.ops = [self.trainer,
@@ -243,8 +243,9 @@ class PointwiseGraph(ComputationalGraph):
     def init_loss(self):
         y_true = self.y
         assert y_true is not None, "y must be set before graph is defined"
-        self.loss = self.loss_function(y_true, tf.squeeze(self.y_hat)) * self.w
-        self.reduced_loss = tf.reduce_mean(self.loss)
+        self.reduced_loss = self.loss_function(y_true, tf.squeeze(self.y_hat),
+                                              weights=self.w,
+                                              reduction=tf.losses.Reduction.MEAN)
         self.size = tf.cast(tf.size(self.y_hat), dtype=self.dtype)
         self.batch_loss = self.reduced_loss * self.size
         tf.summary.scalar('loss', self.reduced_loss)

@@ -323,10 +323,6 @@ class Pointwise(BaseClassifier):
         results = np.concatenate(results).reshape(-1)
         return self.decision_function(results)
 
-    @abstractmethod
-    def decision_function(self, x):
-        pass
-
 
 class Regression(Pointwise):
     """
@@ -477,6 +473,7 @@ class Classification(Pointwise):
                  optimizer=tf.train.AdamOptimizer,
                  opt_kwargs=None,
                  show_progress=True,
+                 decision_function=lambda x: x,
                  log_dir=None,
                  session_config=None,
                  tol=None,
@@ -485,6 +482,7 @@ class Classification(Pointwise):
                  core=None):
         self.sample_weight = sample_weight
         self.pos_class_weight = pos_class_weight
+        self.decision_function = decision_function
         super(Classification, self).__init__(epochs=epochs,
                                              loss_function=loss_function,
                                              n_factors=n_factors,
@@ -530,9 +528,6 @@ class Classification(Pointwise):
                              "or pos_class_weight parameters.")
 
         return w
-
-    def decision_function(self, x):
-        return (x > 0).astype(int)
 
     def score(self, X, y=None, sample_weight=None):
         pass
@@ -741,6 +736,7 @@ class ClassificationRanking(Classification, Ranking):
         self.l2_w = l2_w
         self.opt_kwargs = opt_kwargs
         self.init_core(core)
+        self.decision_function = lambda x: x
 
         super(ClassificationRanking, self).__init__(epochs=epochs,
                                                     init_std=init_std,
@@ -774,9 +770,6 @@ class ClassificationRanking(Classification, Ranking):
                                        learning_rate=self.learning_rate,
                                        l2_v=self.l2_v,
                                        l2_w=self.l2_w)
-
-    def decision_function(self, x):
-        return x
 
     def init_computational_graph(self):
         Ranking.init_computational_graph(self)
